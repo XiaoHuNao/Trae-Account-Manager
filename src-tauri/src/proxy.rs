@@ -472,7 +472,7 @@ async fn handle_models_post(
     headers: warp::http::HeaderMap,
     context: ProxyContext,
 ) -> Response<Vec<u8>> {
-    let selected = select_rule(None, &context.config);
+    let selected = select_rule(None, None, None, &context.config);
     if let Some(rule) = selected {
         let (resolved_endpoint, resolved_api_key) = resolve_rule_upstream(&rule, &context.config);
         let upstream_url = format!("{}/v1/models", trim_endpoint(&resolved_endpoint));
@@ -551,7 +551,24 @@ async fn handle_chat(
         .get("model")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
-    let selected = select_rule(source_model.as_deref(), &context.config);
+    let provider_hint = payload
+        .get("_trae_provider")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    let rule_hint = payload
+        .get("_trae_rule")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    if let Some(obj) = payload.as_object_mut() {
+        obj.remove("_trae_provider");
+        obj.remove("_trae_rule");
+    }
+    let selected = select_rule(
+        source_model.as_deref(),
+        provider_hint.as_deref(),
+        rule_hint.as_deref(),
+        &context.config,
+    );
     if let Some(rule) = selected {
         let (resolved_endpoint, resolved_api_key) = resolve_rule_upstream(&rule, &context.config);
         let target_model = rule.target_model_id.clone();
@@ -709,17 +726,58 @@ fn append_response_headers(
     reply
 }
 
-fn select_rule(model: Option<&str>, config: &ProxyConfig) -> Option<ProxyApiRule> {
+fn select_rule(
+    model: Option<&str>,
+    provider_hint: Option<&str>,
+    rule_hint: Option<&str>,
+    config: &ProxyConfig,
+) -> Option<ProxyApiRule> {
     if config.apis.is_empty() {
         return None;
     }
+    if let Some(rule_name) = rule_hint {
+        let target = rule_name.trim();
+        if !target.is_empty() {
+            if let Some(found) = config.apis.iter().find(|api| {
+                api.active
+                    && api.name.trim() == target
+                    && model.map(|m| api.custom_model_id == m).unwrap_or(true)
+            }) {
+                return Some(found.clone());
+            }
+        }
+    }
     if let Some(model_name) = model {
+        if let Some(provider_name) = provider_hint {
+            let target_provider = provider_name.trim();
+            if !target_provider.is_empty() {
+                if let Some(found) = config.apis.iter().find(|api| {
+                    api.active
+                        && api.custom_model_id == model_name
+                        && api.provider.trim() == target_provider
+                }) {
+                    return Some(found.clone());
+                }
+            }
+        }
         if let Some(found) = config
             .apis
             .iter()
             .find(|api| api.active && api.custom_model_id == model_name)
         {
             return Some(found.clone());
+        }
+    }
+    if let Some(provider_name) = provider_hint {
+        let target_provider = provider_name.trim();
+        if !target_provider.is_empty() {
+            if let Some(found) = config
+                .apis
+                .iter()
+                .find(|api| api.active && api.provider.trim() == target_provider)
+            {
+                return Some(found.clone());
+            }
         }
     }
     if let Some(active) = config.apis.iter().find(|api| api.active) {
@@ -1117,9 +1175,9 @@ mod tests {
                 api_key: String::new(),
             },
         ];
-        let exact = select_rule(Some("gpt-5"), &config).unwrap();
+        let exact = select_rule(Some("gpt-5"), None, None, &config).unwrap();
         assert_eq!(exact.name, "second");
-        let active = select_rule(Some("no-hit"), &config).unwrap();
+        let active = select_rule(Some("no-hit"), None, None, &config).unwrap();
         assert_eq!(active.name, "second");
     }
 

@@ -71,6 +71,7 @@ export function CustomModelProxy({ onToast }: CustomModelProxyProps) {
   const [stopping, setStopping] = useState(false);
   const [testingPath, setTestingPath] = useState<"/v1/chat/completions" | "/v1/models" | null>(null);
   const [testBaseUrl, setTestBaseUrl] = useState("");
+  const [testRuleKey, setTestRuleKey] = useState("");
   const [testResult, setTestResult] = useState<ProxyTestResult | null>(null);
   const [ruleModal, setRuleModal] = useState<RuleModalState>({
     open: false,
@@ -155,6 +156,51 @@ export function CustomModelProxy({ onToast }: CustomModelProxyProps) {
   const canStart = useMemo(() => {
     return !!certStatus?.generated && !!certStatus?.installed;
   }, [certStatus]);
+
+  const testRuleOptions = useMemo(() => {
+    const source = (config.apis || []).filter((item) => item.active);
+    const fallback = source.length > 0 ? source : config.apis || [];
+    return fallback
+      .map((item, index) => {
+        const customModel = item.custom_model_id.trim();
+        const targetModel = item.target_model_id.trim();
+        const model = customModel || targetModel;
+        if (!model) {
+          return null;
+        }
+        const provider = item.provider.trim() || "未指定厂商";
+        const ruleName = item.name.trim() || `规则 ${index + 1}`;
+        const key = `${index}::${provider}::${model}`;
+        const label = `${provider} / ${model}`;
+        return {
+          key,
+          label,
+          provider,
+          ruleName,
+          model,
+        };
+      })
+      .filter((item): item is {
+        key: string;
+        label: string;
+        provider: string;
+        ruleName: string;
+        model: string;
+      } => item !== null);
+  }, [config.apis]);
+
+  useEffect(() => {
+    if (testRuleOptions.length === 0) {
+      if (testRuleKey) {
+        setTestRuleKey("");
+      }
+      return;
+    }
+    const exists = testRuleOptions.some((item) => item.key === testRuleKey);
+    if (!testRuleKey || !exists) {
+      setTestRuleKey(testRuleOptions[0].key);
+    }
+  }, [testRuleOptions, testRuleKey]);
 
   const handleConfigChange = <K extends keyof ProxyConfig>(key: K, value: ProxyConfig[K]) => {
     setConfig((prev) => ({
@@ -327,10 +373,19 @@ export function CustomModelProxy({ onToast }: CustomModelProxyProps) {
     try {
       const base = (testBaseUrl.trim() || status?.base_url || `http://127.0.0.1:${config.server.port}`).replace(/\/+$/, "");
       const endpoint = `${base}${path}`;
+      const selectedRule = testRuleOptions.find((item) => item.key === testRuleKey) || testRuleOptions[0];
+      const modelToTest = selectedRule?.model || "gpt-4";
+      const requestBody = path === "/v1/chat/completions"
+        ? {
+            model: modelToTest,
+            messages: [{ role: "user", content: "ping" }],
+            max_tokens: 1,
+          }
+        : null;
       const result = await api.testProxyPost({
         endpoint,
         method: path === "/v1/models" ? "GET" : "POST",
-        body: null,
+        body: requestBody,
       });
       setTestResult(result);
       onToast?.(result.success ? "success" : "warning", result.success ? "测试请求成功" : "测试请求失败");
@@ -527,6 +582,24 @@ export function CustomModelProxy({ onToast }: CustomModelProxyProps) {
             onChange={(e) => setTestBaseUrl(e.target.value)}
             placeholder={status?.base_url || `http://127.0.0.1:${config.server.port}`}
           />
+        </label>
+        <label className="proxy-field">
+          <span>测试模型</span>
+          <select
+            value={testRuleKey}
+            onChange={(e) => setTestRuleKey(e.target.value)}
+            disabled={!!testingPath || testRuleOptions.length === 0}
+          >
+            {testRuleOptions.length === 0 ? (
+              <option value="">暂无可选模型，请先新增并启用规则</option>
+            ) : (
+              testRuleOptions.map((item) => (
+                <option key={item.key} value={item.key}>
+                  {item.label}
+                </option>
+              ))
+            )}
+          </select>
         </label>
         <div className="proxy-test-rows">
           <div className="proxy-test-row">
