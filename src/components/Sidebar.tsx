@@ -1,4 +1,4 @@
-import { BarChart3, Users, Settings, Info } from "lucide-react";
+import { BarChart3, Users, Settings, Info, Bot } from "lucide-react";
 import logoImage from "../assets/logo.png";
 
 interface SidebarProps {
@@ -9,6 +9,7 @@ interface SidebarProps {
 const menuItems = [
   { id: "dashboard", label: "仪表盘", icon: BarChart3 },
   { id: "accounts", label: "账号管理", icon: Users },
+  { id: "custom-model-proxy", label: "自定义模型代理", icon: Bot },
   { id: "settings", label: "设置", icon: Settings },
   { id: "about", label: "关于", icon: Info },
 ];

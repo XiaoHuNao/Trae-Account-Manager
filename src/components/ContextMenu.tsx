@@ -4,12 +4,13 @@ interface ContextMenuProps {
   x: number;
   y: number;
   onClose: () => void;
+  onRelogin: () => void;
   onViewDetail: () => void;
   onRefresh: () => void;
   onUpdateToken: () => void;
   onCopyToken: () => void;
+  onOpenOfficialSite: () => void;
   onSwitchAccount: () => void;
-  onClaimGift: () => void;
   onDelete: () => void;
   isCurrent?: boolean; // 是否是当前使用的账号
 }
@@ -18,12 +19,13 @@ export function ContextMenu({
   x,
   y,
   onClose,
+  onRelogin,
   onViewDetail,
   onRefresh,
   onUpdateToken,
   onCopyToken,
+  onOpenOfficialSite,
   onSwitchAccount,
-  onClaimGift,
   onDelete,
   isCurrent = false,
 }: ContextMenuProps) {
@@ -52,6 +54,17 @@ export function ContextMenu({
         className="context-menu"
         style={{ left: x, top: y }}
       >
+        {isCurrent ? (
+          <div className="context-menu-item" onClick={onRelogin}>
+            <span className="icon">🔁</span>
+            重新登录
+          </div>
+        ) : (
+          <div className="context-menu-item" onClick={onSwitchAccount}>
+            <span className="icon">🔀</span>
+            切换账号
+          </div>
+        )}
         <div className="context-menu-item" onClick={onViewDetail}>
           <span className="icon">👁</span>
           查看详情
@@ -68,17 +81,9 @@ export function ContextMenu({
           <span className="icon">🔑</span>
           复制 Token
         </div>
-        <div
-          className={`context-menu-item ${isCurrent ? "disabled" : ""}`}
-          onClick={isCurrent ? undefined : onSwitchAccount}
-          title={isCurrent ? "当前已是此账号" : "切换到此账号"}
-        >
-          <span className="icon">{isCurrent ? "✓" : "🔀"}</span>
-          {isCurrent ? "当前使用中" : "切换账号"}
-        </div>
-        <div className="context-menu-item" onClick={onClaimGift}>
-          <span className="icon">🎁</span>
-          获取礼包
+        <div className="context-menu-item" onClick={onOpenOfficialSite}>
+          <span className="icon">🌐</span>
+          登录官网
         </div>
         <div className="context-menu-divider" />
         <div className="context-menu-item danger" onClick={onDelete}>

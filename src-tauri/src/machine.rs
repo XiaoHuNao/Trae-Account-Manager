@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 use uuid::Uuid;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 #[cfg(target_os = "windows")]
@@ -482,6 +482,24 @@ pub fn write_trae_login_info(info: &TraeLoginInfo) -> Result<()> {
     Ok(())
 }
 
+fn remove_file_if_exists(path: &Path, display_name: &str) -> Result<()> {
+    if path.exists() {
+        fs::remove_file(path)
+            .map_err(|e| anyhow!("删除 {} 失败: {}", display_name, e))?;
+        println!("[INFO] 已删除 {}", display_name);
+    }
+    Ok(())
+}
+
+fn remove_dir_if_exists(path: &Path, display_name: &str) -> Result<()> {
+    if path.exists() {
+        fs::remove_dir_all(path)
+            .map_err(|e| anyhow!("清理 {} 失败: {}", display_name, e))?;
+        println!("[INFO] 已清理 {}", display_name);
+    }
+    Ok(())
+}
+
 /// 切换 Trae IDE 到指定账号（清除旧登录状态并写入新账号信息）
 pub fn switch_trae_account(info: &TraeLoginInfo, machine_id: Option<&str>) -> Result<()> {
     // 0. 先关闭 Trae IDE
@@ -489,65 +507,39 @@ pub fn switch_trae_account(info: &TraeLoginInfo, machine_id: Option<&str>) -> Re
 
     let trae_path = get_trae_data_path()?;
 
-    // 1. 设置机器码（如果提供则使用，否则生成新的）
     let new_machine_id = match machine_id {
         Some(mid) => mid.to_string(),
         None => generate_machine_guid(),
     };
+
+    let state_db_path = trae_path.join("User").join("globalStorage").join("state.vscdb");
+    remove_file_if_exists(&state_db_path, "state.vscdb")?;
+
+    let state_db_backup_path = trae_path.join("User").join("globalStorage").join("state.vscdb.backup");
+    remove_file_if_exists(&state_db_backup_path, "state.vscdb.backup")?;
+
+    let local_state_path = trae_path.join("Local State");
+    remove_file_if_exists(&local_state_path, "Local State")?;
+
+    let indexed_db_path = trae_path.join("IndexedDB");
+    remove_dir_if_exists(&indexed_db_path, "IndexedDB")?;
+
+    let local_storage_path = trae_path.join("Local Storage");
+    remove_dir_if_exists(&local_storage_path, "Local Storage")?;
+
+    let session_storage_path = trae_path.join("Session Storage");
+    remove_dir_if_exists(&session_storage_path, "Session Storage")?;
+
+    let cookies_path = trae_path.join("Network").join("Cookies");
+    remove_file_if_exists(&cookies_path, "Cookies")?;
+
+    let cookies_journal_path = trae_path.join("Network").join("Cookies-journal");
+    remove_file_if_exists(&cookies_journal_path, "Cookies-journal")?;
+
     let machine_id_path = trae_path.join("machineid");
     fs::write(&machine_id_path, &new_machine_id)
         .map_err(|e| anyhow!("写入 Trae 机器码失败: {}", e))?;
     println!("[INFO] 已设置 Trae 机器码: {}", new_machine_id);
-
-    // 2. 删除 state.vscdb 数据库（清除旧的登录缓存）
-    let state_db_path = trae_path.join("User").join("globalStorage").join("state.vscdb");
-    if state_db_path.exists() {
-        let _ = fs::remove_file(&state_db_path);
-        println!("[INFO] 已删除 state.vscdb");
-    }
-
-    // 3. 删除 state.vscdb.backup
-    let state_db_backup_path = trae_path.join("User").join("globalStorage").join("state.vscdb.backup");
-    if state_db_backup_path.exists() {
-        let _ = fs::remove_file(&state_db_backup_path);
-    }
-
-    // 4. 清除 Local State
-    let local_state_path = trae_path.join("Local State");
-    if local_state_path.exists() {
-        let _ = fs::remove_file(&local_state_path);
-    }
-
-    // 5. 清除 IndexedDB
-    let indexed_db_path = trae_path.join("IndexedDB");
-    if indexed_db_path.exists() {
-        let _ = fs::remove_dir_all(&indexed_db_path);
-    }
-
-    // 6. 清除 Local Storage
-    let local_storage_path = trae_path.join("Local Storage");
-    if local_storage_path.exists() {
-        let _ = fs::remove_dir_all(&local_storage_path);
-    }
-
-    // 7. 清除 Session Storage
-    let session_storage_path = trae_path.join("Session Storage");
-    if session_storage_path.exists() {
-        let _ = fs::remove_dir_all(&session_storage_path);
-    }
-
-    // 8. 清除 Cookies
-    let cookies_path = trae_path.join("Network").join("Cookies");
-    if cookies_path.exists() {
-        let _ = fs::remove_file(&cookies_path);
-        println!("[INFO] 已清除 Cookies");
-    }
-
-    // 9. 清除 Cookies-journal
-    let cookies_journal_path = trae_path.join("Network").join("Cookies-journal");
-    if cookies_journal_path.exists() {
-        let _ = fs::remove_file(&cookies_journal_path);
-    }
 
     // 10. 更新 storage.json 中的 telemetry ID 并写入登录信息
     let storage_dir = trae_path.join("User").join("globalStorage");
@@ -590,10 +582,7 @@ pub fn switch_trae_account(info: &TraeLoginInfo, machine_id: Option<&str>) -> Re
 
     println!("[INFO] 已切换 Trae IDE 到账号: {}", info.email);
 
-    // 12. 自动打开 Trae IDE
-    if let Err(e) = open_trae() {
-        println!("[WARN] 自动打开 Trae IDE 失败: {}", e);
-    }
+    open_trae().map_err(|e| anyhow!("账号切换完成，但重启 Trae 失败: {}", e))?;
 
     Ok(())
 }

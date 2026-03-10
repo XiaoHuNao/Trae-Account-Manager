@@ -160,28 +160,52 @@ pub struct SubscriptionExtra {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Quota {
+    #[serde(default)]
     pub advanced_model_request_limit: i64,
+    #[serde(default)]
     pub auto_completion_limit: i64,
+    #[serde(default)]
     pub enable_solo_builder: bool,
     #[serde(default)]
     pub enable_solo_builder_v1: bool,
+    #[serde(default)]
     pub enable_solo_coder: bool,
+    #[serde(default)]
     pub enable_super_model: bool,
+    #[serde(default)]
     pub premium_model_fast_request_limit: i64,
+    #[serde(default)]
     pub premium_model_slow_request_limit: i64,
+    #[serde(default)]
+    pub basic_usage_limit: f64,
+    #[serde(default)]
+    pub bonus_usage_limit: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UsageInfo {
+    #[serde(default)]
     pub advanced_model_amount: f64,
+    #[serde(default)]
     pub advanced_model_request_usage: f64,
+    #[serde(default)]
     pub auto_completion_amount: f64,
+    #[serde(default)]
     pub auto_completion_usage: f64,
+    #[serde(default)]
     pub is_flash_consuming: bool,
+    #[serde(default)]
     pub premium_model_fast_amount: f64,
+    #[serde(default)]
     pub premium_model_fast_request_usage: f64,
+    #[serde(default)]
     pub premium_model_slow_amount: f64,
+    #[serde(default)]
     pub premium_model_slow_request_usage: f64,
+    #[serde(default)]
+    pub basic_usage_amount: f64,
+    #[serde(default)]
+    pub bonus_usage_amount: f64,
 }
 
 /// 使用记录查询响应
@@ -217,33 +241,17 @@ pub struct UsageExtraInfo {
 pub struct UsageSummary {
     pub plan_type: String,
     pub reset_time: i64,
-
-    // Fast Request
-    pub fast_request_used: f64,
-    pub fast_request_limit: i64,
-    pub fast_request_left: f64,
-
-    // Extra Package (如周年礼包)
-    pub extra_fast_request_used: f64,
-    pub extra_fast_request_limit: i64,
-    pub extra_fast_request_left: f64,
-    pub extra_expire_time: i64,
     pub extra_package_name: String,
-
-    // Slow Request
-    pub slow_request_used: f64,
-    pub slow_request_limit: i64,
-    pub slow_request_left: f64,
-
-    // Advanced Model
-    pub advanced_model_used: f64,
-    pub advanced_model_limit: i64,
-    pub advanced_model_left: f64,
-
-    // Autocomplete
-    pub autocomplete_used: f64,
-    pub autocomplete_limit: i64,
-    pub autocomplete_left: f64,
+    pub extra_expire_time: i64,
+    pub basic_usage_used: f64,
+    pub basic_usage_limit: f64,
+    pub basic_usage_left: f64,
+    pub bonus_usage_used: f64,
+    pub bonus_usage_limit: f64,
+    pub bonus_usage_left: f64,
+    pub total_usage_used: f64,
+    pub total_usage_limit: f64,
+    pub total_usage_left: f64,
 }
 
 impl Default for UsageSummary {
@@ -251,23 +259,17 @@ impl Default for UsageSummary {
         Self {
             plan_type: "Free".to_string(),
             reset_time: 0,
-            fast_request_used: 0.0,
-            fast_request_limit: 10,
-            fast_request_left: 10.0,
-            extra_fast_request_used: 0.0,
-            extra_fast_request_limit: 0,
-            extra_fast_request_left: 0.0,
-            extra_expire_time: 0,
             extra_package_name: String::new(),
-            slow_request_used: 0.0,
-            slow_request_limit: 50,
-            slow_request_left: 50.0,
-            advanced_model_used: 0.0,
-            advanced_model_limit: 1000,
-            advanced_model_left: 1000.0,
-            autocomplete_used: 0.0,
-            autocomplete_limit: 5000,
-            autocomplete_left: 5000.0,
+            extra_expire_time: 0,
+            basic_usage_used: 0.0,
+            basic_usage_limit: 10.0,
+            basic_usage_left: 10.0,
+            bonus_usage_used: 0.0,
+            bonus_usage_limit: 0.0,
+            bonus_usage_left: 0.0,
+            total_usage_used: 0.0,
+            total_usage_limit: 10.0,
+            total_usage_left: 10.0,
         }
     }
 }

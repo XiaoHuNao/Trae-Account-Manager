@@ -8,14 +8,27 @@ interface AddAccountModalProps {
   onAdd: (token: string, cookies?: string) => Promise<void>;
   onToast?: (type: "success" | "error" | "warning" | "info", message: string) => void;
   onAccountAdded?: () => void;
+  quickRegisterShowWindow?: boolean;
+  autoRegisterThreads?: number;
+  officialSiteUseSystemBrowser?: boolean;
 }
 
-type AddMode = "manual" | "trae-ide" | "browser";
+type AddMode = "manual" | "trae-ide" | "browser" | "auto-register";
 
-export function AddAccountModal({ isOpen, onClose, onAdd, onToast, onAccountAdded }: AddAccountModalProps) {
+export function AddAccountModal({
+  isOpen,
+  onClose,
+  onAdd,
+  onToast,
+  onAccountAdded,
+  quickRegisterShowWindow = false,
+  autoRegisterThreads = 1,
+  officialSiteUseSystemBrowser = false,
+}: AddAccountModalProps) {
   const [mode, setMode] = useState<AddMode>("trae-ide");
   const [tokenInput, setTokenInput] = useState("");
   const [cookiesInput, setCookiesInput] = useState("");
+  const [registerCount, setRegisterCount] = useState("1");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [browserLoginStarted, setBrowserLoginStarted] = useState(false);
@@ -184,10 +197,36 @@ export function AddAccountModal({ isOpen, onClose, onAdd, onToast, onAccountAdde
     }
   };
 
+  const handleAutoRegister = async () => {
+    const count = Number.parseInt(registerCount, 10);
+    if (!Number.isInteger(count) || count < 1) {
+      setError("注册账号数量必须大于 0");
+      return;
+    }
+    const threadCount = Math.max(1, Number(autoRegisterThreads) || 1);
+    setLoading(true);
+    setError("");
+    try {
+      const created = await api.quickRegister(
+        count,
+        threadCount,
+        quickRegisterShowWindow
+      );
+      onToast?.("success", `自动注册完成，成功导入 ${created.length} 个账号`);
+      onAccountAdded?.();
+      handleCloseInternal();
+    } catch (err: any) {
+      setError(err.message || "自动注册失败");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleCloseInternal = () => {
     setError("");
     setTokenInput("");
     setCookiesInput("");
+    setRegisterCount("1");
     setBrowserLoginStarted(false);
     setMode("trae-ide");
     onClose();
@@ -230,6 +269,23 @@ export function AddAccountModal({ isOpen, onClose, onAdd, onToast, onAccountAdde
                 <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
               </svg>
               浏览器登录
+            </button>
+            <button
+              className={`mode-tab ${mode === "auto-register" ? "active" : ""}`}
+              onClick={() => setMode("auto-register")}
+              disabled={loading}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12 2v4"/>
+                <path d="m16.2 7.8 2.9-2.9"/>
+                <path d="M18 12h4"/>
+                <path d="m16.2 16.2 2.9 2.9"/>
+                <path d="M12 18v4"/>
+                <path d="m4.9 19.1 2.9-2.9"/>
+                <path d="M2 12h4"/>
+                <path d="m4.9 4.9 2.9 2.9"/>
+              </svg>
+              自动注册
             </button>
             <button
               className={`mode-tab ${mode === "manual" ? "active" : ""}`}
@@ -283,7 +339,7 @@ export function AddAccountModal({ isOpen, onClose, onAdd, onToast, onAccountAdde
 
               {error && <div className="error-message">{error}</div>}
             </div>
-          ) : (
+          ) : mode === "manual" ? (
             /* 手动输入模式 */
             <div className="manual-mode">
               {/* Token 输入 */}
@@ -338,6 +394,37 @@ export function AddAccountModal({ isOpen, onClose, onAdd, onToast, onAccountAdde
 
               {error && <div className="error-message">{error}</div>}
             </div>
+          ) : (
+            <div className="manual-mode">
+              <div className="form-section">
+                <label className="form-label">
+                  注册账号数量 <span className="required">*</span>
+                </label>
+                <input
+                  className="modal-number-input"
+                  type="number"
+                  min="1"
+                  value={registerCount}
+                  onChange={(e) => setRegisterCount(e.target.value)}
+                  disabled={loading}
+                />
+                <div className="form-help auto-register-meta">
+                  <div className="auto-register-meta-item">
+                    <span>当前线程数</span>
+                    <strong>{Math.max(1, Number(autoRegisterThreads) || 1)}</strong>
+                  </div>
+                  <div className="auto-register-meta-item">
+                    <span>显示浏览器窗口</span>
+                    <strong>{quickRegisterShowWindow ? "是" : "否"}</strong>
+                  </div>
+                  <div className="auto-register-meta-item">
+                    <span>浏览器策略</span>
+                    <strong>{officialSiteUseSystemBrowser ? "系统浏览器优先" : "内置 Chromium"}</strong>
+                  </div>
+                </div>
+              </div>
+              {error && <div className="error-message">{error}</div>}
+            </div>
           )}
         </div>
 
@@ -363,7 +450,7 @@ export function AddAccountModal({ isOpen, onClose, onAdd, onToast, onAccountAdde
             >
               {browserLoginStarted ? "等待登录中..." : loading ? "打开中..." : "打开登录窗口"}
             </button>
-          ) : (
+          ) : mode === "manual" ? (
             <button
               type="button"
               className="primary"
@@ -371,6 +458,15 @@ export function AddAccountModal({ isOpen, onClose, onAdd, onToast, onAccountAdde
               disabled={loading}
             >
               {loading ? "添加中..." : "添加账号"}
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="primary"
+              onClick={handleAutoRegister}
+              disabled={loading}
+            >
+              {loading ? "注册中..." : "开始自动注册"}
             </button>
           )}
         </div>

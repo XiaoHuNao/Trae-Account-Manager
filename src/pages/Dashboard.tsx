@@ -19,17 +19,15 @@ export const Dashboard = memo(function Dashboard({ accounts }: DashboardProps) {
   // 合并所有统计计算为一次遍历，提升性能
   const stats = accounts.reduce((acc, a) => {
     if (a.usage) {
-      // 统计活跃账号
-      if (a.usage.fast_request_left > 0) {
+      const usageLeft = a.usage.total_usage_left;
+      const usageUsed = a.usage.total_usage_used;
+      const usageLimit = a.usage.total_usage_limit;
+      if (usageLeft > 0) {
         acc.activeAccounts++;
       }
-
-      // 累加使用量、配额和剩余量
-      acc.totalUsed += a.usage.fast_request_used + a.usage.extra_fast_request_used;
-      acc.totalLimit += a.usage.fast_request_limit + a.usage.extra_fast_request_limit;
-      acc.totalLeft += a.usage.fast_request_left + a.usage.extra_fast_request_left;
-
-      // 统计套餐分布
+      acc.totalUsed += usageUsed;
+      acc.totalLimit += usageLimit;
+      acc.totalLeft += usageLeft;
       const planType = a.usage.plan_type || 'Free';
       acc.quotaMap.set(planType, (acc.quotaMap.get(planType) || 0) + 1);
     }
@@ -79,8 +77,8 @@ export const Dashboard = memo(function Dashboard({ accounts }: DashboardProps) {
           <div className="stat-card-content">
             <div className="stat-card-info">
               <span className="stat-card-label">总配额</span>
-              <span className="stat-card-value">{totalLimit}</span>
-              <span className="stat-card-change">Fast Requests</span>
+              <span className="stat-card-value">${totalLimit.toFixed(2)}</span>
+              <span className="stat-card-change">Dollar Budget</span>
             </div>
             <div className="stat-card-icon">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -94,7 +92,7 @@ export const Dashboard = memo(function Dashboard({ accounts }: DashboardProps) {
           <div className="stat-card-content">
             <div className="stat-card-info">
               <span className="stat-card-label">已使用</span>
-              <span className="stat-card-value">{Math.round(totalUsed)}</span>
+              <span className="stat-card-value">${totalUsed.toFixed(2)}</span>
               <span className="stat-card-change">{usagePercent}% 使用率</span>
             </div>
             <div className="stat-card-icon">
@@ -109,7 +107,7 @@ export const Dashboard = memo(function Dashboard({ accounts }: DashboardProps) {
           <div className="stat-card-content">
             <div className="stat-card-info">
               <span className="stat-card-label">剩余可用</span>
-              <span className="stat-card-value">{Math.round(totalLeft)}</span>
+              <span className="stat-card-value">${totalLeft.toFixed(2)}</span>
               <span className="stat-card-change">{100 - usagePercent}% 剩余</span>
             </div>
             <div className="stat-card-icon">
@@ -124,7 +122,7 @@ export const Dashboard = memo(function Dashboard({ accounts }: DashboardProps) {
           <div className="stat-card-content">
             <div className="stat-card-info">
               <span className="stat-card-label">平均使用</span>
-              <span className="stat-card-value">{totalAccounts > 0 ? Math.round(totalUsed / totalAccounts) : 0}</span>
+              <span className="stat-card-value">${(totalAccounts > 0 ? (totalUsed / totalAccounts) : 0).toFixed(2)}</span>
               <span className="stat-card-change">每账号</span>
             </div>
             <div className="stat-card-icon">
@@ -163,18 +161,18 @@ export const Dashboard = memo(function Dashboard({ accounts }: DashboardProps) {
               </PieChart>
             </ResponsiveContainer>
             <div className="pie-center-text">
-              <span className="pie-value">{Math.round(totalLeft)}</span>
+              <span className="pie-value">${totalLeft.toFixed(2)}</span>
               <span className="pie-label">剩余</span>
             </div>
           </div>
           <div className="chart-legend">
             <div className="legend-item">
               <span className="legend-dot" style={{ background: '#0ea5e9' }}></span>
-              <span>已使用 ({Math.round(totalUsed)})</span>
+              <span>已使用 (${totalUsed.toFixed(2)})</span>
             </div>
             <div className="legend-item">
               <span className="legend-dot" style={{ background: '#e5e7eb' }}></span>
-              <span>剩余 ({Math.round(totalLeft)})</span>
+              <span>剩余 (${totalLeft.toFixed(2)})</span>
             </div>
           </div>
         </div>
@@ -220,8 +218,8 @@ export const Dashboard = memo(function Dashboard({ accounts }: DashboardProps) {
             </div>
             <div className="preview-list">
               {accounts.slice(0, 4).map((account) => {
-                const used = account.usage ? account.usage.fast_request_used + account.usage.extra_fast_request_used : 0;
-                const limit = account.usage ? account.usage.fast_request_limit + account.usage.extra_fast_request_limit : 0;
+                const used = account.usage ? account.usage.total_usage_used : 0;
+                const limit = account.usage ? account.usage.total_usage_limit : 0;
                 const percent = limit > 0 ? Math.round((used / limit) * 100) : 0;
 
                 return (

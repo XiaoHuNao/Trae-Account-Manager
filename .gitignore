@@ -8,22 +8,23 @@ pnpm-debug.log*
 lerna-debug.log*
 
 # Dependencies
-node_modules
-package-lock.json
-yarn.lock
-pnpm-lock.yaml
+node_modules/
 
 # Build outputs
-dist
-dist-ssr
+dist/
+dist-ssr/
 *.local
-src-tauri/target
-src-tauri/Cargo.lock
+src-tauri/target/
+src-tauri/WixTools/
+src-tauri/gen/
+.turbo/
+.cache/
+*.tsbuildinfo
 
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
-.idea
+.idea/
 .DS_Store
 *.suo
 *.ntvs*
@@ -34,10 +35,6 @@ src-tauri/Cargo.lock
 # OS files
 Thumbs.db
 .DS_Store
-
-# Tauri
-src-tauri/target/
-src-tauri/WixTools
 
 # Temporary files
 *.tmp
@@ -50,12 +47,27 @@ machine_part*.rs
 machine_new.rs
 temp_repo/
 
-# Git
-.git/
-
 # Claude AI
 .claude/
 
-# Application data (optional, uncomment if you don't want to track)
-# *.db
-# *.sqlite
+# Local release / backup folders
+release-portable/
+release-trae-auto-only/
+_upstream_yuan/
+
+# Local runtime config and secrets
+config/
+ca/
+src-tauri/config/certs/
+src-tauri/config/proxy_config.json
+src-tauri/resources/Trae-Proxy/ca/*.key
+*.key
+*.pem
+*.p12
+
+# Python cache
+**/__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/

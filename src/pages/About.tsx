@@ -1,10 +1,6 @@
-import { useState } from "react";
-import wxQrCode from "../assets/wx.jpg";
 import logoImage from "../assets/logo.png";
 
 export function About() {
-  const [showImageModal, setShowImageModal] = useState(false);
-
   return (
     <div className="about-page">
       <div className="about-card">
@@ -37,38 +33,6 @@ export function About() {
           <span className="tech-tag">Rust</span>
         </div>
       </div>
-
-      <div className="about-section">
-        <h3>赞赏支持</h3>
-        <p className="about-desc">
-          如果这个工具对您有帮助，欢迎请作者喝杯咖啡 ☕
-        </p>
-        <div className="appreciation-container">
-          <img
-            src={wxQrCode}
-            alt="微信赞赏码"
-            className="qr-code"
-            onClick={() => setShowImageModal(true)}
-          />
-          <p className="appreciation-text">点击图片放大 · 微信扫码赞赏</p>
-        </div>
-      </div>
-
-      {/* 图片放大模态框 */}
-      {showImageModal && (
-        <div className="image-modal-overlay" onClick={() => setShowImageModal(false)}>
-          <div className="image-modal-content" onClick={(e) => e.stopPropagation()}>
-            <button className="image-modal-close" onClick={() => setShowImageModal(false)}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="24" height="24">
-                <line x1="18" y1="6" x2="6" y2="18"/>
-                <line x1="6" y1="6" x2="18" y2="18"/>
-              </svg>
-            </button>
-            <img src={wxQrCode} alt="微信赞赏码" className="image-modal-img" />
-            <p className="image-modal-text">微信扫码赞赏</p>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

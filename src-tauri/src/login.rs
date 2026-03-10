@@ -201,3 +201,161 @@ pub async fn start_login_flow(
 
     Ok(())
 }
+
+pub fn open_official_site(
+    app: AppHandle,
+    use_default_browser: bool,
+    email: Option<String>,
+    password: Option<String>,
+) -> Result<(), String> {
+    let official_url = "https://www.trae.ai/login";
+    if use_default_browser {
+        open::that(official_url).map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+
+    let autofill_script = build_autofill_script(email.as_deref(), password.as_deref())?;
+
+    if let Some(win) = app.get_webview_window("trae-official-site") {
+        let _ = win.set_focus();
+        let _ = win.eval(&autofill_script);
+        return Ok(());
+    }
+
+    let official_webview_url = official_url
+        .parse::<tauri::Url>()
+        .map_err(|e| e.to_string())?;
+
+    WebviewWindowBuilder::new(
+        &app,
+        "trae-official-site",
+        WebviewUrl::External(official_webview_url),
+    )
+    .title("Trae 官网登录")
+    .inner_size(500.0, 760.0)
+    .center()
+    .incognito(false)
+    .initialization_script(&autofill_script)
+    .build()
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+fn build_autofill_script(email: Option<&str>, password: Option<&str>) -> Result<String, String> {
+    let email_json = serde_json::to_string(email.unwrap_or("")).map_err(|e| e.to_string())?;
+    let password_json = serde_json::to_string(password.unwrap_or("")).map_err(|e| e.to_string())?;
+    Ok(format!(
+        r#"(function() {{
+            var email = {email};
+            var password = {password};
+            if (!email || !password) return;
+            function setNativeValue(input, value) {{
+                var setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
+                if (setter && setter.set) {{
+                    setter.set.call(input, value);
+                }} else {{
+                    input.value = value;
+                }}
+            }}
+            function setVal(input, value) {{
+                if (!input) return;
+                input.focus();
+                setNativeValue(input, value);
+                input.dispatchEvent(new Event("input", {{ bubbles: true }}));
+                input.dispatchEvent(new Event("change", {{ bubbles: true }}));
+                input.dispatchEvent(new KeyboardEvent("keydown", {{ key: "Enter", bubbles: true }}));
+                input.dispatchEvent(new KeyboardEvent("keyup", {{ bubbles: true }}));
+                input.blur();
+            }}
+            function findEmailInput() {{
+                return document.querySelector('input[type="email"], input[name="email"], input[autocomplete="username"], input[autocomplete="email"], input[placeholder*="邮箱"], input[placeholder*="Email"], input[placeholder*="email"]');
+            }}
+            function findPasswordInput() {{
+                return document.querySelector('input[type="password"], input[name="password"], input[autocomplete="current-password"], input[placeholder*="密码"], input[placeholder*="Password"], input[placeholder*="password"]');
+            }}
+            function findLoginBtn() {{
+                function isVisible(el) {{
+                    return !!el && el.offsetParent !== null;
+                }}
+                function byXPath(path) {{
+                    try {{
+                        var res = document.evaluate(path, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+                        return res && res.singleNodeValue ? res.singleNodeValue : null;
+                    }} catch (e) {{
+                        return null;
+                    }}
+                }}
+                function hasLoginText(el) {{
+                    var text = (el.innerText || el.textContent || el.value || '').trim().toLowerCase();
+                    if (!text || text.length > 20) return false;
+                    return text === '登录' || text === 'log in' || text === 'login' || text === 'sign in' || text === '继续';
+                }}
+
+                var xpathBtn = byXPath("//div[contains(@class,'btn-submit') and contains(@class,'trae__btn') and ((.//div[normalize-space()='Log in']) or (normalize-space()='Log in') or (.//div[normalize-space()='登录']) or (normalize-space()='登录'))]");
+                if (isVisible(xpathBtn)) return xpathBtn;
+
+                var submitCandidates = Array.from(document.querySelectorAll('.btn-submit, .btn-submit.trae__btn'));
+                var submitBtn = submitCandidates.find(function(btn) {{
+                    return isVisible(btn) && hasLoginText(btn);
+                }});
+                if (submitBtn) return submitBtn;
+
+                var directCandidates = Array.from(document.querySelectorAll('button[type="submit"], input[type="submit"], [data-testid*="login"], [id*="login"]'));
+                var direct = directCandidates.find(function(btn) {{
+                    return isVisible(btn) && !btn.disabled && hasLoginText(btn);
+                }});
+                if (direct) return direct;
+
+                var candidates = Array.from(document.querySelectorAll('button, [role="button"], input[type="submit"], div, span, a'));
+                return candidates.find(function(btn) {{
+                    if (!isVisible(btn) || btn.disabled || !hasLoginText(btn)) return false;
+                    var tagName = btn.tagName.toLowerCase();
+                    var className = (btn.className || '').toLowerCase();
+                    if (tagName === 'button' || tagName === 'input' || tagName === 'a') return true;
+                    return className.includes('btn') || className.includes('button') || className.includes('submit');
+                }});
+            }}
+            function triggerSubmit(passwordInput) {{
+                if (!passwordInput) return;
+                var form = passwordInput.closest('form');
+                if (form) {{
+                    form.dispatchEvent(new Event("submit", {{ bubbles: true, cancelable: true }}));
+                }}
+                passwordInput.focus();
+                passwordInput.dispatchEvent(new KeyboardEvent("keydown", {{ key: "Enter", code: "Enter", bubbles: true }}));
+                passwordInput.dispatchEvent(new KeyboardEvent("keyup", {{ key: "Enter", code: "Enter", bubbles: true }}));
+            }}
+            function tryAutoLogin() {{
+                var emailInput = findEmailInput();
+                var passwordInput = findPasswordInput();
+                if (!emailInput || !passwordInput) return false;
+                setVal(emailInput, email);
+                setVal(passwordInput, password);
+                var clicked = false;
+                var clickCount = 0;
+                var clickTimer = setInterval(function() {{
+                    clickCount += 1;
+                    var loginBtn = findLoginBtn();
+                    if (loginBtn) {{
+                        loginBtn.click();
+                        clicked = true;
+                        clearInterval(clickTimer);
+                    }}
+                    if (clickCount >= 10) {{
+                        clearInterval(clickTimer);
+                        if (!clicked) triggerSubmit(passwordInput);
+                    }}
+                }}, 300);
+                return true;
+            }}
+            var count = 0;
+            var timer = setInterval(function() {{
+                count += 1;
+                if (tryAutoLogin() || count > 60) clearInterval(timer);
+            }}, 500);
+        }})();"#,
+        email = email_json,
+        password = password_json
+    ))
+}

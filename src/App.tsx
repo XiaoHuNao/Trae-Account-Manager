@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Sidebar } from "./components/Sidebar";
 import { AccountCard } from "./components/AccountCard";
 import { AccountListItem } from "./components/AccountListItem";
@@ -12,13 +12,15 @@ import { UpdateTokenModal } from "./components/UpdateTokenModal";
 import { Dashboard } from "./pages/Dashboard";
 import { Settings } from "./pages/Settings";
 import { About } from "./pages/About";
+import { CustomModelProxy } from "./pages/CustomModelProxy";
 import { useToast } from "./hooks/useToast";
 import * as api from "./api";
-import type { AccountBrief, UsageSummary } from "./types";
+import type { AccountBrief, AppSettings, UsageSummary } from "./types";
 import "./App.css";
 
 interface AccountWithUsage extends AccountBrief {
   usage?: UsageSummary | null;
+  password?: string | null;
 }
 
 type ViewMode = "grid" | "list";
@@ -31,9 +33,16 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState("dashboard");
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
+  const [appSettings, setAppSettings] = useState<AppSettings>({
+    quick_register_show_window: false,
+    auto_register_threads: 1,
+    official_site_use_system_browser: false,
+    accounts_data_path: "",
+  });
 
   // 使用自定义 Toast hook
   const { toasts, addToast, removeToast } = useToast();
+  const previousAccountsPathRef = useRef<string | null>(null);
 
   // 确认弹窗状态
   const [confirmModal, setConfirmModal] = useState<{
@@ -113,6 +122,25 @@ function App() {
   useEffect(() => {
     loadAccounts();
   }, [loadAccounts]);
+
+  useEffect(() => {
+    api.getSettings()
+      .then((settings) => setAppSettings(settings))
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    const nextPath = (appSettings.accounts_data_path || "").trim();
+    const previousPath = previousAccountsPathRef.current;
+    if (previousPath === null) {
+      previousAccountsPathRef.current = nextPath;
+      return;
+    }
+    if (previousPath !== nextPath) {
+      previousAccountsPathRef.current = nextPath;
+      loadAccounts();
+    }
+  }, [appSettings.accounts_data_path, loadAccounts]);
 
   // 自动刷新即将过期的 Token
   useEffect(() => {
@@ -238,25 +266,59 @@ function App() {
     }
   };
 
-  // 切换账号
-  const handleSwitchAccount = async (accountId: string) => {
+  const handleOpenOfficialSite = async (accountId: string) => {
+    try {
+      const account = await api.getAccount(accountId);
+      await api.openOfficialSite(
+        appSettings.official_site_use_system_browser,
+        account.email || null,
+        account.password || null
+      );
+      if (appSettings.official_site_use_system_browser) {
+        addToast("info", "默认浏览器模式下不支持自动填充，请手动登录");
+      } else if (!account.email || !account.password) {
+        addToast("warning", "账号邮箱或密码为空，已打开登录页请手动输入");
+      } else {
+        addToast("success", "已打开登录页并尝试自动填写账号密码");
+      }
+    } catch (err: any) {
+      addToast("error", err.message || "打开官网失败");
+    }
+  };
+
+  const handleSwitchAccount = async (
+    accountId: string,
+    options?: { mode?: "switch" | "relogin"; force?: boolean }
+  ) => {
     const account = accounts.find((a) => a.id === accountId);
     if (!account) return;
 
+    const mode = options?.mode ?? "switch";
+    const force = options?.force ?? mode === "relogin";
+    const title = mode === "relogin" ? "重新登录" : "切换账号";
+    const message =
+      mode === "relogin"
+        ? `确定要重新登录账号 "${account.email || account.name}" 吗？\n\n系统将自动关闭 Trae IDE 并重新写入登录信息。`
+        : `确定要切换到账号 "${account.email || account.name}" 吗？\n\n系统将自动关闭 Trae IDE 并切换登录信息。`;
+    const infoToast = mode === "relogin" ? "正在重新登录，请稍候..." : "正在切换账号，请稍候...";
+    const successToast = mode === "relogin" ? "账号重新登录完成，请重新打开 Trae IDE" : "账号切换成功，请重新打开 Trae IDE";
+    const errorToast = mode === "relogin" ? "重新登录失败" : "切换账号失败";
+
     setConfirmModal({
       isOpen: true,
-      title: "切换账号",
-      message: `确定要切换到账号 "${account.email || account.name}" 吗？\n\n系统将自动关闭 Trae IDE 并切换登录信息。`,
+      title,
+      message,
       type: "warning",
       onConfirm: async () => {
         setConfirmModal(null);
-        addToast("info", "正在切换账号，请稍候...");
+        addToast("info", infoToast);
         try {
-          await api.switchAccount(accountId);
+          await api.switchAccount(accountId, { force });
           await loadAccounts();
-          addToast("success", "账号切换成功，请重新打开 Trae IDE");
+          setContextMenu(null);
+          addToast("success", successToast);
         } catch (err: any) {
-          addToast("error", err.message || "切换账号失败");
+          addToast("error", api.getErrorMessage(err, errorToast));
         }
       },
     });
@@ -290,6 +352,16 @@ function App() {
     }
   };
 
+  // 更新密码
+  const handleSavePassword = async (accountId: string, password: string) => {
+    await api.updateAccountPassword(accountId, password);
+    setDetailAccount((prev) => {
+      if (!prev || prev.id !== accountId) return prev;
+      return { ...prev, password };
+    });
+    addToast("success", password ? "密码已保存" : "密码已清空");
+  };
+
   // 打开更新 Token 弹窗
   const handleOpenUpdateToken = (accountId: string) => {
     const account = accounts.find((a) => a.id === accountId);
@@ -299,31 +371,6 @@ function App() {
         accountName: account.email || account.name,
       });
     }
-  };
-
-  // 获取礼包
-  const handleClaimGift = async (accountId: string) => {
-    const account = accounts.find((a) => a.id === accountId);
-    if (!account) return;
-
-    setConfirmModal({
-      isOpen: true,
-      title: "获取礼包",
-      message: `确定要为账号 "${account.email || account.name}" 领取周年礼包吗？\n\n领取后将自动刷新账号额度。`,
-      type: "info",
-      onConfirm: async () => {
-        setConfirmModal(null);
-        addToast("info", "正在领取礼包，请稍候...");
-        try {
-          await api.claimGift(accountId);
-          // 刷新账号数据
-          await handleRefreshAccount(accountId);
-          addToast("success", "礼包领取成功！额度已更新");
-        } catch (err: any) {
-          addToast("error", err.message || "领取礼包失败");
-        }
-      },
-    });
   };
 
   // 显示导出说明
@@ -808,7 +855,26 @@ function App() {
                 <p>配置应用程序选项</p>
               </div>
             </header>
-            <Settings onToast={addToast} />
+            <Settings
+              onToast={addToast}
+              settings={appSettings}
+              onSettingsChange={setAppSettings}
+              onRefreshAccounts={loadAccounts}
+            />
+          </>
+        )}
+
+        {currentPage === "custom-model-proxy" && (
+          <>
+            <header className="page-header">
+              <div className="header-left">
+                <h2 className="page-title">自定义模型代理</h2>
+                <p>服务管理、证书管理、规则管理与测试 POST</p>
+              </div>
+            </header>
+            <main className="app-main">
+              <CustomModelProxy onToast={addToast} />
+            </main>
           </>
         )}
 
@@ -861,6 +927,9 @@ function App() {
           x={contextMenu.x}
           y={contextMenu.y}
           onClose={() => setContextMenu(null)}
+          onRelogin={() => {
+            handleSwitchAccount(contextMenu.accountId, { mode: "relogin", force: true });
+          }}
           onViewDetail={() => {
             handleViewDetail(contextMenu.accountId);
             setContextMenu(null);
@@ -877,13 +946,12 @@ function App() {
             handleCopyToken(contextMenu.accountId);
             setContextMenu(null);
           }}
-          onSwitchAccount={() => {
-            handleSwitchAccount(contextMenu.accountId);
+          onOpenOfficialSite={() => {
+            handleOpenOfficialSite(contextMenu.accountId);
             setContextMenu(null);
           }}
-          onClaimGift={() => {
-            handleClaimGift(contextMenu.accountId);
-            setContextMenu(null);
+          onSwitchAccount={() => {
+            handleSwitchAccount(contextMenu.accountId);
           }}
           onDelete={() => {
             handleDeleteAccount(contextMenu.accountId);
@@ -900,12 +968,16 @@ function App() {
         onAdd={handleAddAccount}
         onToast={addToast}
         onAccountAdded={loadAccounts}
+        quickRegisterShowWindow={appSettings.quick_register_show_window}
+        autoRegisterThreads={appSettings.auto_register_threads}
+        officialSiteUseSystemBrowser={appSettings.official_site_use_system_browser}
       />
 
       {/* 详情弹窗 */}
       <DetailModal
         isOpen={!!detailAccount}
         onClose={() => setDetailAccount(null)}
+        onSavePassword={handleSavePassword}
         account={detailAccount}
         usage={detailAccount?.usage || null}
       />

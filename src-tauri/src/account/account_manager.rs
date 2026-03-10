@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Result};
+use serde_json::Value;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use super::types::*;
 use crate::api::{TraeApiClient, UsageSummary, UsageQueryResponse};
@@ -13,15 +14,14 @@ pub struct AccountManager {
 
 impl AccountManager {
     /// 创建账号管理器
-    pub fn new() -> Result<Self> {
-        let data_path = Self::get_data_path()?;
+    pub fn new(configured_path: Option<&str>) -> Result<Self> {
+        let data_path = Self::resolve_data_path(configured_path)?;
         let store = Self::load_store(&data_path)?;
 
         Ok(Self { store, data_path })
     }
 
-    /// 获取数据存储路径
-    fn get_data_path() -> Result<PathBuf> {
+    fn get_default_data_path() -> Result<PathBuf> {
         let proj_dirs = directories::ProjectDirs::from("com", "sauce", "trae-auto")
             .ok_or_else(|| anyhow!("无法获取应用数据目录"))?;
 
@@ -31,15 +31,59 @@ impl AccountManager {
         Ok(data_dir.join("accounts.json"))
     }
 
+    fn resolve_data_path(configured_path: Option<&str>) -> Result<PathBuf> {
+        if let Some(raw_path) = configured_path {
+            let trimmed = raw_path.trim();
+            if !trimmed.is_empty() {
+                let mut path = PathBuf::from(trimmed);
+                if !path.is_absolute() {
+                    path = std::env::current_dir()?.join(path);
+                }
+                return Ok(path);
+            }
+        }
+        Self::get_default_data_path()
+    }
+
     /// 加载账号存储
     fn load_store(path: &PathBuf) -> Result<AccountStore> {
-        if path.exists() {
-            let content = fs::read_to_string(path)?;
-            let store: AccountStore = serde_json::from_str(&content)?;
-            Ok(store)
-        } else {
-            Ok(AccountStore::default())
+        if !path.exists() {
+            return Ok(AccountStore::default());
         }
+        let content = fs::read_to_string(path)?;
+        if content.trim().is_empty() {
+            return Ok(AccountStore::default());
+        }
+        let value: Value = serde_json::from_str(&content)
+            .map_err(|e| anyhow!("账号数据文件 JSON 解析失败: {}", e))?;
+        if let Some(accounts_value) = value.get("accounts") {
+            if accounts_value.is_array() {
+                return serde_json::from_value::<AccountStore>(value)
+                    .map_err(|e| anyhow!("账号数据文件结构错误: {}", e));
+            }
+            if let Some(accounts_map) = accounts_value.as_object() {
+                let mut accounts = Vec::new();
+                for item in accounts_map.values() {
+                    let account: Account = serde_json::from_value(item.clone())
+                        .map_err(|e| anyhow!("账号条目结构错误: {}", e))?;
+                    accounts.push(account);
+                }
+                return Ok(AccountStore {
+                    accounts,
+                    active_account_id: value
+                        .get("active_account_id")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    current_account_id: value
+                        .get("current_account_id")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                });
+            }
+        }
+        Err(anyhow!(
+            "该文件不是有效的账号数据文件：应包含 accounts 数组"
+        ))
     }
 
     /// 保存账号存储
@@ -47,6 +91,25 @@ impl AccountManager {
         let content = serde_json::to_string_pretty(&self.store)?;
         fs::write(&self.data_path, content)?;
         Ok(())
+    }
+
+    pub fn set_data_path(&mut self, configured_path: Option<&str>) -> Result<()> {
+        let data_path = Self::resolve_data_path(configured_path)?;
+        if configured_path
+            .map(|v| !v.trim().is_empty())
+            .unwrap_or(false)
+            && !data_path.exists()
+        {
+            return Err(anyhow!("账号数据文件不存在，请选择已有的 accounts.json"));
+        }
+        let store = Self::load_store(&data_path)?;
+        self.data_path = data_path;
+        self.store = store;
+        Ok(())
+    }
+
+    pub fn data_path(&self) -> &Path {
+        &self.data_path
     }
 
     /// 添加账号（通过 cookies）
@@ -193,37 +256,38 @@ impl AccountManager {
     }
 
     /// 切换账号（设置活跃账号并将登录信息写入 Trae IDE）
-    pub fn switch_account(&mut self, account_id: &str) -> Result<()> {
-        // 检查是否已经是当前使用的账号
-        if self.store.current_account_id.as_deref() == Some(account_id) {
-            return Err(anyhow!("该账号已经是当前使用的账号"));
-        }
-
+    pub fn switch_account(&mut self, account_id: &str, force: bool) -> Result<()> {
         let account = self.store.accounts.iter()
             .find(|a| a.id == account_id)
             .ok_or_else(|| anyhow!("账号不存在"))?
             .clone();
 
-        // 检查账号是否有有效的 Token
-        let token = account.jwt_token.as_ref()
+        if !force && self.store.current_account_id.as_deref() == Some(account_id) {
+            return Err(anyhow!("该账号已经是当前使用的账号"));
+        }
+
+        let token = account.jwt_token.as_deref()
+            .map(str::trim)
+            .filter(|token| !token.is_empty())
             .ok_or_else(|| anyhow!("账号没有有效的 Token，无法切换"))?;
 
-        // 构建 Trae IDE 登录信息
+        if Self::is_token_expired(&account) {
+            return Err(anyhow!("账号 Token 已过期，请先更新 Token 或重新登录"));
+        }
+
         let login_info = crate::machine::TraeLoginInfo {
-            token: token.clone(),
-            refresh_token: None, // 如果有 refresh token 可以在这里设置
+            token: token.to_string(),
+            refresh_token: None,
             user_id: account.user_id.clone(),
             email: account.email.clone(),
             username: account.name.clone(),
             avatar_url: account.avatar_url.clone(),
-            host: String::new(), // 根据 region 自动选择
+            host: String::new(),
             region: if account.region.is_empty() { "SG".to_string() } else { account.region.clone() },
         };
 
-        // 切换 Trae IDE 到该账号（清除旧登录状态并写入新账号信息）
         crate::machine::switch_trae_account(&login_info, account.machine_id.as_deref())?;
 
-        // 如果账号有绑定的机器码，也更新系统机器码
         if let Some(machine_id) = &account.machine_id {
             match crate::machine::set_machine_guid(machine_id) {
                 Ok(_) => println!("[INFO] 已切换系统机器码: {}", machine_id),
@@ -231,7 +295,6 @@ impl AccountManager {
             }
         }
 
-        // 设置活跃账号和当前使用的账号
         self.store.active_account_id = Some(account_id.to_string());
         self.store.current_account_id = Some(account_id.to_string());
         self.save_store()?;
@@ -423,6 +486,21 @@ impl AccountManager {
         Ok(())
     }
 
+    /// 更新账号密码
+    pub fn update_account_password(&mut self, account_id: &str, password: String) -> Result<()> {
+        let acc = self
+            .store
+            .accounts
+            .iter_mut()
+            .find(|a| a.id == account_id)
+            .ok_or_else(|| anyhow!("账号不存在"))?;
+
+        acc.password = if password.is_empty() { None } else { Some(password) };
+        acc.updated_at = chrono::Utc::now().timestamp();
+        self.save_store()?;
+        Ok(())
+    }
+
     /// 导出账号数据
     pub fn export_accounts(&self) -> Result<String> {
         let export_data: Vec<serde_json::Value> = self.store.accounts.iter().map(|acc| {
@@ -430,6 +508,7 @@ impl AccountManager {
                 "name": acc.name,
                 "email": acc.email,
                 "cookies": acc.cookies,
+                "password": acc.password,
                 "user_id": acc.user_id,
                 "tenant_id": acc.tenant_id,
                 "region": acc.region,
@@ -456,6 +535,9 @@ impl AccountManager {
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
+            let password = item.get("password")
+                .and_then(|v| v.as_str())
+                .map(|v| v.to_string());
 
             if cookies.is_empty() {
                 continue;
@@ -463,7 +545,12 @@ impl AccountManager {
 
             // 尝试通过 cookies 添加账号
             match self.add_account(cookies).await {
-                Ok(_) => {
+                Ok(account) => {
+                    if let Some(pwd) = password {
+                        if let Err(e) = self.update_account_password(&account.id, pwd) {
+                            println!("[WARN] 保存导入密码失败: {}", e);
+                        }
+                    }
                     imported_count += 1;
                 }
                 Err(e) => {
@@ -673,26 +760,32 @@ impl AccountManager {
         Ok(Some(account))
     }
 
+    fn parse_token_expired_at(expired_at: &str) -> Option<i64> {
+        if let Ok(expiry) = chrono::DateTime::parse_from_rfc3339(expired_at) {
+            return Some(expiry.with_timezone(&chrono::Utc).timestamp());
+        }
+        expired_at.parse::<i64>().ok()
+    }
+
+    fn is_token_expired(account: &Account) -> bool {
+        let Some(expired_at) = account.token_expired_at.as_deref() else {
+            return false;
+        };
+        match Self::parse_token_expired_at(expired_at) {
+            Some(ts) => ts <= chrono::Utc::now().timestamp(),
+            None => true,
+        }
+    }
+
     /// 判断账号的 Token 是否即将过期（< 1小时）或已过期
     fn is_token_expiring_soon(account: &Account) -> bool {
         match &account.token_expired_at {
             None => true, // 无过期时间信息，需要刷新
             Some(expired_at) => {
-                match chrono::DateTime::parse_from_rfc3339(expired_at) {
-                    Ok(expiry) => {
-                        let now = chrono::Utc::now();
-                        let one_hour = chrono::Duration::hours(1);
-                        expiry.with_timezone(&chrono::Utc) < now + one_hour
-                    }
-                    Err(_) => {
-                        // 尝试解析为时间戳（秒）
-                        if let Ok(ts) = expired_at.parse::<i64>() {
-                            let now = chrono::Utc::now().timestamp();
-                            ts < now + 3600
-                        } else {
-                            true // 无法解析，需要刷新
-                        }
-                    }
+                let now = chrono::Utc::now().timestamp();
+                match Self::parse_token_expired_at(expired_at) {
+                    Some(ts) => ts < now + 3600,
+                    None => true,
                 }
             }
         }
@@ -719,29 +812,5 @@ impl AccountManager {
             }
         }
         Ok(refreshed)
-    }
-
-    /// 领取生日礼包
-    pub async fn claim_birthday_bonus(&mut self, account_id: &str) -> Result<()> {
-        let account = self.store.accounts.iter()
-            .find(|a| a.id == account_id)
-            .ok_or_else(|| anyhow!("账号不存在"))?;
-
-        let token = account.jwt_token.as_ref()
-            .ok_or_else(|| anyhow!("账号没有 Token"))?;
-
-        let client = TraeApiClient::new_with_token(token)?;
-
-        // 先查询是否已领取
-        let claimed = client.query_birthday_bonus().await?;
-        if claimed {
-            return Err(anyhow!("该账号已领取过礼包"));
-        }
-
-        // 领取礼包
-        client.claim_birthday_bonus().await?;
-
-        println!("[INFO] 成功领取礼包: {}", account.email);
-        Ok(())
     }
 }

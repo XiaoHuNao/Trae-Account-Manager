@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { UsageSummary } from "../types";
 
 interface DetailModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onSavePassword: (accountId: string, password: string) => Promise<void>;
   account: {
     id: string;
     name: string;
@@ -12,12 +13,21 @@ interface DetailModalProps {
     plan_type: string;
     cookies?: string;
     jwt_token?: string | null;
+    password?: string | null;
   } | null;
   usage: UsageSummary | null;
 }
 
-export function DetailModal({ isOpen, onClose, account, usage }: DetailModalProps) {
+export function DetailModal({ isOpen, onClose, onSavePassword, account, usage }: DetailModalProps) {
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [passwordInput, setPasswordInput] = useState("");
+  const [savingPassword, setSavingPassword] = useState(false);
+
+  useEffect(() => {
+    if (account) {
+      setPasswordInput(account.password || "");
+    }
+  }, [account?.id, account?.password]);
 
   if (!isOpen || !account) return null;
 
@@ -39,6 +49,19 @@ export function DetailModal({ isOpen, onClose, account, usage }: DetailModalProp
       console.error("复制失败:", err);
     }
   };
+
+  const handleSavePassword = async () => {
+    if (!account) return;
+    try {
+      setSavingPassword(true);
+      await onSavePassword(account.id, passwordInput);
+    } finally {
+      setSavingPassword(false);
+    }
+  };
+
+  const originalPassword = account.password || "";
+  const canSavePassword = passwordInput !== originalPassword && !savingPassword;
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -71,6 +94,38 @@ export function DetailModal({ isOpen, onClose, account, usage }: DetailModalProp
             <div className="detail-row">
               <span className="detail-label">重置时间</span>
               <span className="detail-value">{usage ? formatDate(usage.reset_time) : "-"}</span>
+            </div>
+            <div className="detail-row detail-row-password">
+              <span className="detail-label">密码</span>
+              <div className="detail-password-actions">
+                <input
+                  type="text"
+                  value={passwordInput}
+                  onChange={(e) => setPasswordInput(e.target.value)}
+                  placeholder="暂无密码，可手动填写"
+                />
+                {passwordInput && (
+                  <button
+                    className="copy-btn-icon"
+                    onClick={() => handleCopy(passwordInput, "password")}
+                    title="复制密码"
+                  >
+                    {copiedField === "password" ? (
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="18" height="18">
+                        <path d="M20 6L9 17l-5-5"/>
+                      </svg>
+                    ) : (
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="18" height="18">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                      </svg>
+                    )}
+                  </button>
+                )}
+                <button className="copy-btn-inline" disabled={!canSavePassword} onClick={handleSavePassword}>
+                  {savingPassword ? "保存中..." : "保存密码"}
+                </button>
+              </div>
             </div>
           </div>
 
@@ -129,63 +184,53 @@ export function DetailModal({ isOpen, onClose, account, usage }: DetailModalProp
           {usage && (
             <>
               <div className="detail-section">
-                <h3>Fast Request</h3>
+                <h3>Dollar Usage</h3>
                 <div className="detail-row">
                   <span className="detail-label">已使用</span>
-                  <span className="detail-value">{formatNumber(usage.fast_request_used)}</span>
+                  <span className="detail-value">${formatNumber(usage.total_usage_used)}</span>
                 </div>
                 <div className="detail-row">
                   <span className="detail-label">总配额</span>
-                  <span className="detail-value">{formatNumber(usage.fast_request_limit)}</span>
+                  <span className="detail-value">${formatNumber(usage.total_usage_limit)}</span>
                 </div>
                 <div className="detail-row">
                   <span className="detail-label">剩余</span>
-                  <span className="detail-value success">{formatNumber(usage.fast_request_left)}</span>
+                  <span className="detail-value success">${formatNumber(usage.total_usage_left)}</span>
                 </div>
               </div>
 
-              {usage.extra_fast_request_limit > 0 && (
-                <div className="detail-section">
-                  <h3>额外礼包 {usage.extra_package_name && `(${usage.extra_package_name})`}</h3>
-                  <div className="detail-row">
-                    <span className="detail-label">已使用</span>
-                    <span className="detail-value">{formatNumber(usage.extra_fast_request_used)}</span>
-                  </div>
-                  <div className="detail-row">
-                    <span className="detail-label">总配额</span>
-                    <span className="detail-value">{formatNumber(usage.extra_fast_request_limit)}</span>
-                  </div>
-                  <div className="detail-row">
-                    <span className="detail-label">剩余</span>
-                    <span className="detail-value success">{formatNumber(usage.extra_fast_request_left)}</span>
-                  </div>
-                  <div className="detail-row">
-                    <span className="detail-label">过期时间</span>
-                    <span className="detail-value">{formatDate(usage.extra_expire_time)}</span>
-                  </div>
-                </div>
-              )}
-
               <div className="detail-section">
-                <h3>其他配额</h3>
+                <h3>计费明细</h3>
                 <div className="detail-row">
-                  <span className="detail-label">Slow Request</span>
+                  <span className="detail-label">Basic</span>
                   <span className="detail-value">
-                    {formatNumber(usage.slow_request_used)} / {formatNumber(usage.slow_request_limit)}
+                    ${formatNumber(usage.basic_usage_used)} / ${formatNumber(usage.basic_usage_limit)}
                   </span>
                 </div>
                 <div className="detail-row">
-                  <span className="detail-label">Advanced Model</span>
+                  <span className="detail-label">
+                    {usage.extra_package_name && usage.extra_package_name !== "Extra package"
+                      ? `Extra package (${usage.extra_package_name})`
+                      : "Extra package"}
+                  </span>
                   <span className="detail-value">
-                    {formatNumber(usage.advanced_model_used)} / {formatNumber(usage.advanced_model_limit)}
+                    ${formatNumber(usage.bonus_usage_used)} / ${formatNumber(usage.bonus_usage_limit)}
                   </span>
                 </div>
                 <div className="detail-row">
-                  <span className="detail-label">Autocomplete</span>
+                  <span className="detail-label">重置时间</span>
                   <span className="detail-value">
-                    {formatNumber(usage.autocomplete_used)} / {formatNumber(usage.autocomplete_limit)}
+                    {formatDate(usage.reset_time)}
                   </span>
                 </div>
+                {usage.extra_expire_time > 0 && (
+                  <div className="detail-row">
+                    <span className="detail-label">额外包到期</span>
+                    <span className="detail-value">
+                      {formatDate(usage.extra_expire_time)}
+                    </span>
+                  </div>
+                )}
               </div>
             </>
           )}

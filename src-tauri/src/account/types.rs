@@ -8,6 +8,8 @@ pub struct Account {
     pub email: String,
     pub avatar_url: String,
     pub cookies: String,
+    #[serde(default)]
+    pub password: Option<String>,
     pub jwt_token: Option<String>,
     pub token_expired_at: Option<String>,
     pub user_id: String,
@@ -37,6 +39,7 @@ impl Account {
             email,
             avatar_url: String::new(),
             cookies,
+            password: None,
             jwt_token: None,
             token_expired_at: None,
             user_id,

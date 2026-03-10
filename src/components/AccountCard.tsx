@@ -44,9 +44,9 @@ export function AccountCard({ account, usage, selected, onSelect, onContextMenu 
     return `${year}/${month}/${day}`;
   };
 
-  const totalUsed = usage ? usage.fast_request_used + usage.extra_fast_request_used : 0;
-  const totalLimit = usage ? usage.fast_request_limit + usage.extra_fast_request_limit : 0;
-  const totalLeft = usage ? usage.fast_request_left + usage.extra_fast_request_left : 0;
+  const totalUsed = usage ? usage.total_usage_used : 0;
+  const totalLimit = usage ? usage.total_usage_limit : 0;
+  const totalLeft = usage ? usage.total_usage_left : 0;
   const usagePercent = totalLimit > 0 ? Math.round((totalUsed / totalLimit) * 100) : 0;
   const usageLevel = getUsageLevel(totalUsed, totalLimit);
 
@@ -117,14 +117,6 @@ export function AccountCard({ account, usage, selected, onSelect, onContextMenu 
 
       <div className="card-tags">
         <span className="tag plan">{usage?.plan_type || account.plan_type || "Free"}</span>
-        {usage && usage.extra_fast_request_limit > 0 && (
-          <span className="tag extra">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M20 12l-1.41-1.41L13 16.17V4h-2v12.17l-5.58-5.59L4 12l8 8 8-8z" transform="rotate(180 12 12)"/>
-            </svg>
-            礼包
-          </span>
-        )}
         {account.is_current && (
           <span className="tag current">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
@@ -137,7 +129,7 @@ export function AccountCard({ account, usage, selected, onSelect, onContextMenu 
 
       <div className="card-usage">
         <div className="usage-header">
-          <span className="usage-label">Fast Requests</span>
+          <span className="usage-label">Dollar Usage</span>
           <span className={`usage-percent ${usageLevel}`}>{usagePercent}%</span>
         </div>
         <div className="usage-bar">
@@ -148,9 +140,9 @@ export function AccountCard({ account, usage, selected, onSelect, onContextMenu 
         </div>
         <div className="usage-numbers">
           <span className="usage-used">
-            <strong>{Math.round(totalUsed)}</strong> / {totalLimit}
+            <strong>${totalUsed.toFixed(2)}</strong> / ${totalLimit.toFixed(2)}
           </span>
-          <span className="usage-left">剩余 {Math.round(totalLeft)}</span>
+          <span className="usage-left">剩余 ${totalLeft.toFixed(2)}</span>
         </div>
       </div>
 
@@ -170,14 +162,6 @@ export function AccountCard({ account, usage, selected, onSelect, onContextMenu 
           </svg>
           重置 {usage ? formatDate(usage.reset_time) : "-"}
         </span>
-        {usage && usage.extra_expire_time > 0 && (
-          <span className="meta-item warning">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M20 12v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-6M12 2v10M8 6l4-4 4 4"/>
-            </svg>
-            礼包到期 {formatDate(usage.extra_expire_time)}
-          </span>
-        )}
       </div>
 
       <div className="card-footer">

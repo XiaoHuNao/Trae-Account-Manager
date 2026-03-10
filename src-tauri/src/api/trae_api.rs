@@ -394,8 +394,8 @@ impl TraeApiClient {
                     match serde_json::from_str::<EntitlementListResponse>(&response_text) {
                         Ok(entitlements) => {
                             let summary = Self::parse_entitlements_to_summary(entitlements)?;
-                            println!("[DEBUG] Parsed Summary: fast_request_limit={}, extra_fast_request_limit={}",
-                                summary.fast_request_limit, summary.extra_fast_request_limit);
+                            println!("[DEBUG] Parsed Summary: total_usage_limit={}",
+                                summary.total_usage_limit);
                             return Ok(summary);
                         }
                         Err(e) => {
@@ -420,104 +420,92 @@ impl TraeApiClient {
     /// 解析配额信息为使用量汇总
     fn parse_entitlements_to_summary(entitlements: EntitlementListResponse) -> Result<UsageSummary> {
         let mut summary = UsageSummary::default();
+        let mut has_switch_reward = false;
+        let mut has_anniversary_reward = false;
+        let mut has_other_extra = false;
 
         for pack in entitlements.user_entitlement_pack_list {
             let base = &pack.entitlement_base_info;
             let usage = &pack.usage;
             let quota = &base.quota;
-
-            // 判断是否是额外礼包（product_type == 2）
-            if base.product_type == 2 {
-                // Extra Package
-                summary.extra_fast_request_limit = quota.premium_model_fast_request_limit;
-                // 使用 premium_model_fast_amount 作为实际使用量
-                summary.extra_fast_request_used = usage.premium_model_fast_amount;
-                summary.extra_fast_request_left =
-                    summary.extra_fast_request_limit as f64 - summary.extra_fast_request_used;
-                summary.extra_expire_time = base.end_time;
-
-                // 尝试获取礼包名称
-                if let Some(pkg_extra) = &base.product_extra.package_extra {
-                    if pkg_extra.package_source_type == 6 {
-                        summary.extra_package_name = "2026 Anniversary Treat".to_string();
-                    }
-                }
-            } else {
-                // Free/Pro Plan
-                summary.plan_type = if base.product_id == 0 {
-                    "Free".to_string()
+            let pkg_quota = base
+                .product_extra
+                .package_extra
+                .as_ref()
+                .map(|p| &p.quota);
+            let pick_limit = |primary: f64, fallback: f64| {
+                if primary > 0.0 {
+                    primary
                 } else {
-                    "Pro".to_string()
+                    fallback
+                }
+            };
+            let basic_limit = pick_limit(
+                quota.basic_usage_limit,
+                quota.premium_model_fast_request_limit as f64,
+            );
+            let basic_used = pick_limit(
+                usage.basic_usage_amount,
+                usage.premium_model_fast_amount,
+            );
+            let extra_limit = pick_limit(
+                pkg_quota.map(|q| q.basic_usage_limit).unwrap_or(0.0),
+                pkg_quota
+                    .map(|q| q.premium_model_fast_request_limit as f64)
+                    .unwrap_or_else(|| pick_limit(quota.bonus_usage_limit, quota.basic_usage_limit)),
+            );
+            let extra_used = pick_limit(usage.bonus_usage_amount, usage.basic_usage_amount);
+
+            if base.product_type == 2 {
+                let label = if let Some(pkg_extra) = &base.product_extra.package_extra {
+                    match pkg_extra.package_source_type {
+                        5 => "Switch reward".to_string(),
+                        6 => "Anniversary reward".to_string(),
+                        _ => "Extra package".to_string(),
+                    }
+                } else {
+                    "Extra package".to_string()
                 };
-                summary.reset_time = base.end_time;
-
-                summary.fast_request_limit = quota.premium_model_fast_request_limit;
-                // 使用 premium_model_fast_amount 作为实际使用量
-                summary.fast_request_used = usage.premium_model_fast_amount;
-                summary.fast_request_left =
-                    summary.fast_request_limit as f64 - summary.fast_request_used;
-
-                summary.slow_request_limit = quota.premium_model_slow_request_limit;
-                // 使用 premium_model_slow_amount 作为实际使用量
-                summary.slow_request_used = usage.premium_model_slow_amount;
-                summary.slow_request_left =
-                    summary.slow_request_limit as f64 - summary.slow_request_used;
-
-                summary.advanced_model_limit = quota.advanced_model_request_limit;
-                // 使用 advanced_model_amount 作为实际使用量
-                summary.advanced_model_used = usage.advanced_model_amount;
-                summary.advanced_model_left =
-                    summary.advanced_model_limit as f64 - summary.advanced_model_used;
-
-                summary.autocomplete_limit = quota.auto_completion_limit;
-                // 使用 auto_completion_amount 作为实际使用量
-                summary.autocomplete_used = usage.auto_completion_amount;
-                summary.autocomplete_left =
-                    summary.autocomplete_limit as f64 - summary.autocomplete_used;
+                let effective_expire = if pack.expire_time > 0 { pack.expire_time } else { base.end_time };
+                summary.bonus_usage_limit += extra_limit.max(0.0);
+                summary.bonus_usage_used += extra_used.max(0.0);
+                if effective_expire > summary.extra_expire_time {
+                    summary.extra_expire_time = effective_expire;
+                }
+                match label.as_str() {
+                    "Switch reward" => has_switch_reward = true,
+                    "Anniversary reward" => has_anniversary_reward = true,
+                    _ => has_other_extra = true,
+                }
+                continue;
             }
+
+            summary.plan_type = if base.product_id == 0 {
+                "Free".to_string()
+            } else {
+                "Pro".to_string()
+            };
+            summary.reset_time = base.end_time;
+            summary.basic_usage_limit = basic_limit;
+            summary.basic_usage_used = basic_used;
         }
+
+        summary.extra_package_name = if has_switch_reward && !has_anniversary_reward && !has_other_extra {
+            "Switch reward".to_string()
+        } else if has_anniversary_reward && !has_switch_reward && !has_other_extra {
+            "Anniversary reward".to_string()
+        } else if has_switch_reward || has_anniversary_reward || has_other_extra {
+            "Extra package".to_string()
+        } else {
+            String::new()
+        };
+
+        summary.basic_usage_left = (summary.basic_usage_limit - summary.basic_usage_used).max(0.0);
+        summary.bonus_usage_left = (summary.bonus_usage_limit - summary.bonus_usage_used).max(0.0);
+        summary.total_usage_limit = summary.basic_usage_limit + summary.bonus_usage_limit;
+        summary.total_usage_used = summary.basic_usage_used + summary.bonus_usage_used;
+        summary.total_usage_left = (summary.total_usage_limit - summary.total_usage_used).max(0.0);
 
         Ok(summary)
-    }
-
-    /// 查询礼包状态
-    pub async fn query_birthday_bonus(&self) -> Result<bool> {
-        let url = format!("{}/trae/api/v1/pay/query_birthday_bonus", self.api_base);
-        let headers = self.build_headers_token_only()?;
-
-        let response = self
-            .client
-            .post(&url)
-            .headers(headers)
-            .send()
-            .await?;
-
-        if !response.status().is_success() {
-            return Err(anyhow!("查询礼包状态失败: {}", response.status()));
-        }
-
-        let data: serde_json::Value = response.json().await?;
-
-        // 返回是否已领取
-        Ok(data["bonus_claimed"].as_bool().unwrap_or(false))
-    }
-
-    /// 领取礼包
-    pub async fn claim_birthday_bonus(&self) -> Result<()> {
-        let url = format!("{}/trae/api/v1/pay/claim_birthday_bonus", self.api_base);
-        let headers = self.build_headers_token_only()?;
-
-        let response = self
-            .client
-            .post(&url)
-            .headers(headers)
-            .send()
-            .await?;
-
-        if !response.status().is_success() {
-            return Err(anyhow!("领取礼包失败: {}", response.status()));
-        }
-
-        Ok(())
     }
 }

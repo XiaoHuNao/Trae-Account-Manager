@@ -17,9 +17,9 @@ interface AccountListItemProps {
 }
 
 export function AccountListItem({ account, usage, selected, onSelect, onContextMenu }: AccountListItemProps) {
-  const totalUsed = usage ? usage.fast_request_used + usage.extra_fast_request_used : 0;
-  const totalLimit = usage ? usage.fast_request_limit + usage.extra_fast_request_limit : 0;
-  const totalLeft = usage ? usage.fast_request_left + usage.extra_fast_request_left : 0;
+  const totalUsed = usage ? usage.total_usage_used : 0;
+  const totalLimit = usage ? usage.total_usage_limit : 0;
+  const totalLeft = usage ? usage.total_usage_left : 0;
   const usagePercent = totalLimit > 0 ? Math.round((totalUsed / totalLimit) * 100) : 0;
 
   const getUsageColor = () => {
@@ -86,17 +86,14 @@ export function AccountListItem({ account, usage, selected, onSelect, onContextM
 
       <div className="list-item-plan">
         <span className="plan-badge">{usage?.plan_type || account.plan_type || "Free"}</span>
-        {usage && usage.extra_fast_request_limit > 0 && (
-          <span className="extra-badge">礼包</span>
-        )}
       </div>
 
       <div className="list-item-usage">
         <div className="usage-info">
           <span className="usage-text">
-            <strong>{Math.round(totalUsed)}</strong> / {totalLimit}
+            <strong>${totalUsed.toFixed(2)}</strong> / ${totalLimit.toFixed(2)}
           </span>
-          <span className="usage-left">剩余 {Math.round(totalLeft)}</span>
+          <span className="usage-left">剩余 ${totalLeft.toFixed(2)}</span>
         </div>
         <div className="usage-bar-mini">
           <div

@@ -1,18 +1,29 @@
 import { useState, useEffect } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import * as api from "../api";
+import type { AppSettings } from "../types";
 
 interface SettingsProps {
   onToast?: (type: "success" | "error" | "warning" | "info", message: string) => void;
+  settings: AppSettings;
+  onSettingsChange?: (settings: AppSettings) => void;
+  onRefreshAccounts?: () => Promise<void>;
 }
 
-export function Settings({ onToast }: SettingsProps) {
+export function Settings({ onToast, settings, onSettingsChange, onRefreshAccounts }: SettingsProps) {
   const [traeMachineId, setTraeMachineId] = useState<string>("");
   const [traeRefreshing, setTraeRefreshing] = useState(false);
   const [clearingTrae, setClearingTrae] = useState(false);
   const [traePath, setTraePath] = useState<string>("");
   const [traePathLoading, setTraePathLoading] = useState(false);
   const [scanning, setScanning] = useState(false);
+  const [quickRegisterShowWindow, setQuickRegisterShowWindow] = useState<boolean>(settings.quick_register_show_window);
+  const [autoRegisterThreads, setAutoRegisterThreads] = useState<string>(String(settings.auto_register_threads || 1));
+  const [officialSiteUseSystemBrowser, setOfficialSiteUseSystemBrowser] = useState<boolean>(settings.official_site_use_system_browser);
+  const [accountsDataPath, setAccountsDataPath] = useState<string>(settings.accounts_data_path || "");
+  const [currentAccountsDataPath, setCurrentAccountsDataPath] = useState<string>("加载中...");
+  const [updatingRegisterSettings, setUpdatingRegisterSettings] = useState(false);
+  const [refreshingAccounts, setRefreshingAccounts] = useState(false);
 
   // 加载 Trae IDE 机器码
   const loadTraeMachineId = async () => {
@@ -42,10 +53,27 @@ export function Settings({ onToast }: SettingsProps) {
     }
   };
 
+  const loadAccountsDataPath = async () => {
+    try {
+      const path = await api.getAccountsDataPath();
+      setCurrentAccountsDataPath(path || "未设置");
+    } catch {
+      setCurrentAccountsDataPath("未设置");
+    }
+  };
+
   useEffect(() => {
     loadTraeMachineId();
     loadTraePath();
+    loadAccountsDataPath();
   }, []);
+
+  useEffect(() => {
+    setQuickRegisterShowWindow(settings.quick_register_show_window);
+    setAutoRegisterThreads(String(settings.auto_register_threads || 1));
+    setOfficialSiteUseSystemBrowser(settings.official_site_use_system_browser);
+    setAccountsDataPath(settings.accounts_data_path || "");
+  }, [settings.quick_register_show_window, settings.auto_register_threads, settings.official_site_use_system_browser, settings.accounts_data_path]);
 
   // 复制 Trae IDE 机器码
   const handleCopyTraeMachineId = async () => {
@@ -109,6 +137,106 @@ export function Settings({ onToast }: SettingsProps) {
       }
     } catch (err: any) {
       onToast?.("error", err.message || "选择文件失败");
+    }
+  };
+
+  const handleSaveRegisterSettings = async (next: AppSettings, refreshAccounts: boolean = false) => {
+    setUpdatingRegisterSettings(true);
+    try {
+      const saved = await api.updateSettings(next);
+      onSettingsChange?.(saved);
+      setAccountsDataPath(saved.accounts_data_path || "");
+      await loadAccountsDataPath();
+      if (refreshAccounts) {
+        await onRefreshAccounts?.();
+      }
+      onToast?.("success", "设置已保存");
+    } catch (err: any) {
+      onToast?.("error", err.message || "保存设置失败");
+      setQuickRegisterShowWindow(settings.quick_register_show_window);
+      setAutoRegisterThreads(String(settings.auto_register_threads || 1));
+      setOfficialSiteUseSystemBrowser(settings.official_site_use_system_browser);
+      setAccountsDataPath(settings.accounts_data_path || "");
+      await loadAccountsDataPath();
+    } finally {
+      setUpdatingRegisterSettings(false);
+    }
+  };
+
+  const handleToggleQuickRegisterShowWindow = async (checked: boolean) => {
+    setQuickRegisterShowWindow(checked);
+    const threads = Math.max(1, Number.parseInt(autoRegisterThreads, 10) || settings.auto_register_threads || 1);
+    await handleSaveRegisterSettings({
+      quick_register_show_window: checked,
+      auto_register_threads: threads,
+      official_site_use_system_browser: officialSiteUseSystemBrowser,
+      accounts_data_path: accountsDataPath.trim(),
+    });
+  };
+
+  const handleAutoRegisterThreadsBlur = async () => {
+    const parsed = Math.max(1, Number.parseInt(autoRegisterThreads, 10) || 1);
+    setAutoRegisterThreads(String(parsed));
+    await handleSaveRegisterSettings({
+      quick_register_show_window: quickRegisterShowWindow,
+      auto_register_threads: parsed,
+      official_site_use_system_browser: officialSiteUseSystemBrowser,
+      accounts_data_path: accountsDataPath.trim(),
+    });
+  };
+
+  const handleToggleOfficialSiteUseSystemBrowser = async (checked: boolean) => {
+    setOfficialSiteUseSystemBrowser(checked);
+    const threads = Math.max(1, Number.parseInt(autoRegisterThreads, 10) || settings.auto_register_threads || 1);
+    await handleSaveRegisterSettings({
+      quick_register_show_window: quickRegisterShowWindow,
+      auto_register_threads: threads,
+      official_site_use_system_browser: checked,
+      accounts_data_path: accountsDataPath.trim(),
+    });
+  };
+
+  const handleSetAccountsDataPath = async () => {
+    const selected = await open({
+      title: "设置账号数据文件路径",
+      multiple: false,
+      filters: [{ name: "JSON", extensions: ["json"] }],
+    });
+    if (!selected) {
+      return;
+    }
+    const normalized = String(selected).trim();
+    const threads = Math.max(1, Number.parseInt(autoRegisterThreads, 10) || settings.auto_register_threads || 1);
+    await handleSaveRegisterSettings({
+      quick_register_show_window: quickRegisterShowWindow,
+      auto_register_threads: threads,
+      official_site_use_system_browser: officialSiteUseSystemBrowser,
+      accounts_data_path: normalized,
+    }, true);
+  };
+
+  const handleResetAccountsDataPath = async () => {
+    const threads = Math.max(1, Number.parseInt(autoRegisterThreads, 10) || settings.auto_register_threads || 1);
+    await handleSaveRegisterSettings({
+      quick_register_show_window: quickRegisterShowWindow,
+      auto_register_threads: threads,
+      official_site_use_system_browser: officialSiteUseSystemBrowser,
+      accounts_data_path: "",
+    }, true);
+  };
+
+  const handleManualRefreshAccounts = async () => {
+    if (!onRefreshAccounts) {
+      return;
+    }
+    setRefreshingAccounts(true);
+    try {
+      await onRefreshAccounts();
+      onToast?.("success", "账号列表已刷新");
+    } catch (err: any) {
+      onToast?.("error", err.message || "刷新账号列表失败");
+    } finally {
+      setRefreshingAccounts(false);
     }
   };
 
@@ -185,7 +313,7 @@ export function Settings({ onToast }: SettingsProps) {
 
       {/* 路径设置 */}
       <div className="settings-section">
-        <h3>客户端路径</h3>
+        <h3>路径</h3>
         <div className="machine-id-card trae-card">
           <div className="machine-id-header">
             <div className="machine-id-icon trae-icon">
@@ -200,6 +328,20 @@ export function Settings({ onToast }: SettingsProps) {
           </div>
           <div className="machine-id-value">
             <code>{traePathLoading ? "加载中..." : (traePath || "未设置")}</code>
+          </div>
+          <div className="machine-id-title machine-id-title-with-icon">
+            <div className="machine-id-title-row">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="machine-id-inline-icon">
+                <path d="M3 7l9-4 9 4-9 4-9-4z"/>
+                <path d="M3 12l9 4 9-4"/>
+                <path d="M3 17l9 4 9-4"/>
+              </svg>
+              <span>账号数据文件路径</span>
+            </div>
+            <span className="machine-id-subtitle">当前 accounts.json 实际读写路径</span>
+          </div>
+          <div className="machine-id-value">
+            <code>{currentAccountsDataPath}</code>
           </div>
           <div className="machine-id-actions">
             <button
@@ -225,6 +367,38 @@ export function Settings({ onToast }: SettingsProps) {
               </svg>
               手动设置
             </button>
+            <button
+              className="machine-id-btn"
+              onClick={handleManualRefreshAccounts}
+              disabled={refreshingAccounts || updatingRegisterSettings}
+              title="刷新账号列表"
+            >
+              {refreshingAccounts ? "刷新中..." : "刷新账号列表"}
+            </button>
+            <button
+              className="machine-id-btn"
+              onClick={handleSetAccountsDataPath}
+              disabled={updatingRegisterSettings}
+              title="设置账号路径"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12 20h9"/>
+                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>
+              </svg>
+              设置账号路径
+            </button>
+            <button
+              className="machine-id-btn"
+              onClick={handleResetAccountsDataPath}
+              disabled={updatingRegisterSettings}
+              title="重置默认账号路径"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M3 12a9 9 0 1 0 3-6.7"/>
+                <path d="M3 3v6h6"/>
+              </svg>
+              重置默认账号路径
+            </button>
           </div>
           <div className="machine-id-tip">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -239,6 +413,58 @@ export function Settings({ onToast }: SettingsProps) {
 
       <div className="settings-section">
         <h3>通用设置</h3>
+        <div className="setting-item">
+          <div className="setting-info">
+            <div className="setting-label">快速注册显示浏览器窗口</div>
+            <div className="setting-desc">仅控制是否显示浏览器窗口；开启=有头，关闭=无头。两种模式都会随机设备指纹。</div>
+          </div>
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={quickRegisterShowWindow}
+              onChange={(e) => handleToggleQuickRegisterShowWindow(e.target.checked)}
+              disabled={updatingRegisterSettings}
+            />
+            <span className="toggle-slider"></span>
+          </label>
+        </div>
+
+        <div className="setting-item">
+          <div className="setting-info">
+            <div className="setting-label">自动注册账号线程数</div>
+            <div className="setting-desc">默认 1，建议根据网络稳定性逐步提高</div>
+          </div>
+          <input
+            className="setting-input setting-input-sm"
+            type="number"
+            min={1}
+            value={autoRegisterThreads}
+            onChange={(e) => setAutoRegisterThreads(e.target.value)}
+            onBlur={handleAutoRegisterThreadsBlur}
+            disabled={updatingRegisterSettings}
+          />
+        </div>
+
+        <div className="setting-item">
+          <div className="setting-info">
+            <div className="setting-label">浏览器途径</div>
+            <div className="setting-desc">
+              {officialSiteUseSystemBrowser
+                ? "当前：官网登录使用系统默认浏览器；自动注册优先系统浏览器（失败时回退内置 Chromium）"
+                : "当前：官网登录与自动注册均使用内置 Chromium"}
+            </div>
+          </div>
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={officialSiteUseSystemBrowser}
+              onChange={(e) => handleToggleOfficialSiteUseSystemBrowser(e.target.checked)}
+              disabled={updatingRegisterSettings}
+            />
+            <span className="toggle-slider"></span>
+          </label>
+        </div>
+
         <div className="setting-item">
           <div className="setting-info">
             <div className="setting-label">自动刷新</div>

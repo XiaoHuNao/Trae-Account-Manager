@@ -1,5 +1,70 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Account, AccountBrief, UsageSummary, UsageEventsResponse } from "./types";
+import type {
+  Account,
+  AccountBrief,
+  AppSettings,
+  UsageSummary,
+  UsageEventsResponse,
+  ProxyConfig,
+  ProxyStatus,
+  CertStatus,
+  CertOperationResult,
+  ProxyTestRequest,
+  ProxyTestResult,
+  ProxyDiagnosticLog,
+} from "./types";
+
+function invokeSafe<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  const globalInvoke = (globalThis as any)?.__TAURI__?.core?.invoke;
+  const caller = typeof globalInvoke === "function" ? globalInvoke : invoke;
+  if (typeof caller !== "function") {
+    return Promise.reject(new Error("当前环境不支持 Tauri invoke"));
+  }
+  return caller(command, args);
+}
+
+function pickMessage(value: unknown): string {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (value instanceof Error) return value.message || "";
+  if (typeof value !== "object") return "";
+
+  const record = value as Record<string, unknown>;
+  const message = record.message;
+  if (typeof message === "string" && message.trim()) {
+    return message;
+  }
+  const error = record.error;
+  if (typeof error === "string" && error.trim()) {
+    return error;
+  }
+  if (typeof error === "object" && error) {
+    return pickMessage(error);
+  }
+  return "";
+}
+
+function normalizeMessage(message: string): string {
+  const normalized = message.replace(/^Command\s+\w+\s+failed:\s*/i, "").trim();
+  return normalized || message.trim();
+}
+
+export function getErrorMessage(error: unknown, fallback: string): string {
+  const message = normalizeMessage(pickMessage(error));
+  return message || fallback;
+}
+
+async function invokeWithReadableError<T>(
+  command: string,
+  args: Record<string, unknown> | undefined,
+  fallbackMessage: string
+): Promise<T> {
+  try {
+    return await invoke(command, args);
+  } catch (error) {
+    throw new Error(getErrorMessage(error, fallbackMessage));
+  }
+}
 
 // 添加账号（通过 Cookies）
 export async function addAccount(cookies: string): Promise<Account> {
@@ -27,13 +92,23 @@ export async function getAccount(accountId: string): Promise<Account> {
 }
 
 // 设置活跃账号
-export async function setActiveAccount(accountId: string): Promise<void> {
-  return invoke("switch_account", { accountId });
+export async function setActiveAccount(
+  accountId: string,
+  options?: { force?: boolean }
+): Promise<void> {
+  return switchAccount(accountId, options);
 }
 
 // 切换账号（设置活跃账号并更新机器码）
-export async function switchAccount(accountId: string): Promise<void> {
-  return invoke("switch_account", { accountId });
+export async function switchAccount(
+  accountId: string,
+  options?: { force?: boolean }
+): Promise<void> {
+  return invokeWithReadableError(
+    "switch_account",
+    { accountId, force: options?.force },
+    "切换账号失败"
+  );
 }
 
 // 获取账号使用量
@@ -54,6 +129,11 @@ export async function refreshToken(accountId: string): Promise<void> {
 // 更新 Cookies
 export async function updateCookies(accountId: string, cookies: string): Promise<void> {
   return invoke("update_cookies", { accountId, cookies });
+}
+
+// 更新密码
+export async function updateAccountPassword(accountId: string, password: string): Promise<void> {
+  return invoke("update_account_password", { accountId, password });
 }
 
 // 导出账号
@@ -151,16 +231,85 @@ export async function refreshAllTokens(): Promise<string[]> {
   return invoke("refresh_all_tokens");
 }
 
-// ============ 礼包相关 API ============
-
-// 领取礼包
-export async function claimGift(accountId: string): Promise<void> {
-  return invoke("claim_gift", { accountId });
-}
-
 // ============ 浏览器登录 ============
 
 // 打开浏览器登录窗口
 export async function startBrowserLogin(): Promise<void> {
   return invoke("start_browser_login");
+}
+
+export async function openOfficialSite(
+  useDefaultBrowser: boolean,
+  email?: string | null,
+  password?: string | null
+): Promise<void> {
+  return invoke("open_official_site", { useDefaultBrowser, email, password });
+}
+
+export async function quickRegister(
+  registerCount: number,
+  threadCount: number,
+  showWindow: boolean
+): Promise<Account[]> {
+  return invoke("quick_register", { registerCount, threadCount, showWindow });
+}
+
+export async function getSettings(): Promise<AppSettings> {
+  return invoke("get_settings");
+}
+
+export async function getAccountsDataPath(): Promise<string> {
+  return invoke("get_accounts_data_path");
+}
+
+export async function updateSettings(settings: AppSettings): Promise<AppSettings> {
+  return invoke("update_settings", { settings });
+}
+
+export async function getProxyConfig(): Promise<ProxyConfig> {
+  return invokeSafe("get_proxy_config");
+}
+
+export async function saveProxyConfig(config: ProxyConfig): Promise<ProxyConfig> {
+  return invokeSafe("save_proxy_config", { config });
+}
+
+export async function startProxy(): Promise<ProxyStatus> {
+  return invokeSafe("start_proxy");
+}
+
+export async function stopProxy(): Promise<ProxyStatus> {
+  return invokeSafe("stop_proxy");
+}
+
+export async function getProxyStatus(): Promise<ProxyStatus> {
+  return invokeSafe("get_proxy_status");
+}
+
+export async function getCertStatus(): Promise<CertStatus> {
+  return invokeSafe("get_cert_status");
+}
+
+export async function generateCert(): Promise<CertOperationResult> {
+  return invokeSafe("generate_cert");
+}
+
+export async function installCert(): Promise<CertOperationResult> {
+  return invokeSafe("install_cert");
+}
+
+export async function uninstallCert(): Promise<CertOperationResult> {
+  return invokeSafe("uninstall_cert");
+}
+
+export async function exportCert(): Promise<CertOperationResult> {
+  return invokeSafe("export_cert");
+}
+
+export async function testProxyPost(request: ProxyTestRequest): Promise<ProxyTestResult> {
+  return invokeSafe("test_proxy_post", { request });
+}
+
+export async function getProxyDiagnostics(): Promise<ProxyDiagnosticLog[]> {
+  return invokeSafe("get_proxy_diagnostics");
 }
