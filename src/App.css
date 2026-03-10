@@ -1471,6 +1471,106 @@ body {
   margin: 0 auto;
 }
 
+.auto-register-risk-hint {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.auto-register-risk-hint strong {
+  display: block;
+  font-size: 13px;
+  color: #b45309;
+  margin-bottom: 6px;
+}
+
+.auto-register-risk-hint p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.risk-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 6, 23, 0.55);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1200;
+}
+
+.risk-confirm-card {
+  width: min(560px, calc(100vw - 32px));
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow-lg);
+  padding: 20px;
+}
+
+.risk-confirm-card h3 {
+  margin: 0 0 10px;
+  font-size: 18px;
+  color: var(--text-primary);
+}
+
+.risk-confirm-card p {
+  margin: 0 0 10px;
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+
+.risk-confirm-card ul {
+  margin: 0 0 14px 18px;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.8;
+}
+
+.risk-confirm-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.risk-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.risk-confirm-actions button {
+  border: 1px solid var(--border);
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-radius: 10px;
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.risk-confirm-actions button.primary {
+  border: none;
+  background: var(--gradient-accent);
+  color: #fff;
+}
+
+.risk-confirm-actions button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 /* Manual Mode */
 .manual-mode {
   padding: 10px 0;

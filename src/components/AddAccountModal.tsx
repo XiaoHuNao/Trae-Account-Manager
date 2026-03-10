@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
 import * as api from "../api";
+import type { AppSettings } from "../types";
 
 interface AddAccountModalProps {
   isOpen: boolean;
@@ -10,7 +11,9 @@ interface AddAccountModalProps {
   onAccountAdded?: () => void;
   quickRegisterShowWindow?: boolean;
   autoRegisterThreads?: number;
+  quickRegisterAgreementAccepted?: boolean;
   officialSiteUseSystemBrowser?: boolean;
+  onSettingsChange?: (settings: AppSettings) => void;
 }
 
 type AddMode = "manual" | "trae-ide" | "browser" | "auto-register";
@@ -23,7 +26,9 @@ export function AddAccountModal({
   onAccountAdded,
   quickRegisterShowWindow = false,
   autoRegisterThreads = 1,
+  quickRegisterAgreementAccepted = false,
   officialSiteUseSystemBrowser = false,
+  onSettingsChange,
 }: AddAccountModalProps) {
   const [mode, setMode] = useState<AddMode>("trae-ide");
   const [tokenInput, setTokenInput] = useState("");
@@ -32,6 +37,8 @@ export function AddAccountModal({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [browserLoginStarted, setBrowserLoginStarted] = useState(false);
+  const [showRiskConfirm, setShowRiskConfirm] = useState(false);
+  const [riskConfirmed, setRiskConfirmed] = useState(false);
 
   // 监听浏览器登录事件
   useEffect(() => {
@@ -197,7 +204,7 @@ export function AddAccountModal({
     }
   };
 
-  const handleAutoRegister = async () => {
+  const executeAutoRegister = async () => {
     const count = Number.parseInt(registerCount, 10);
     if (!Number.isInteger(count) || count < 1) {
       setError("注册账号数量必须大于 0");
@@ -222,12 +229,46 @@ export function AddAccountModal({
     }
   };
 
+  const handleAutoRegister = async () => {
+    if (!quickRegisterAgreementAccepted) {
+      setRiskConfirmed(false);
+      setShowRiskConfirm(true);
+      return;
+    }
+    await executeAutoRegister();
+  };
+
+  const handleConfirmRiskAgreement = async () => {
+    if (!riskConfirmed) {
+      return;
+    }
+    setLoading(true);
+    setError("");
+    try {
+      const current = await api.getSettings();
+      const saved = await api.updateSettings({
+        ...current,
+        quick_register_agreement_accepted: true,
+      });
+      onSettingsChange?.(saved);
+      setShowRiskConfirm(false);
+      setRiskConfirmed(false);
+      await executeAutoRegister();
+    } catch (err: any) {
+      setError(err.message || "保存协议同意状态失败");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleCloseInternal = () => {
     setError("");
     setTokenInput("");
     setCookiesInput("");
     setRegisterCount("1");
     setBrowserLoginStarted(false);
+    setShowRiskConfirm(false);
+    setRiskConfirmed(false);
     setMode("trae-ide");
     onClose();
   };
@@ -424,6 +465,12 @@ export function AddAccountModal({
                 </div>
               </div>
               {error && <div className="error-message">{error}</div>}
+              {!quickRegisterAgreementAccepted && (
+                <div className="auto-register-risk-hint">
+                  <strong>自动注册默认禁用</strong>
+                  <p>请先阅读并同意风险协议，再启用自动注册功能。</p>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -460,17 +507,69 @@ export function AddAccountModal({
               {loading ? "添加中..." : "添加账号"}
             </button>
           ) : (
-            <button
-              type="button"
-              className="primary"
-              onClick={handleAutoRegister}
-              disabled={loading}
-            >
-              {loading ? "注册中..." : "开始自动注册"}
-            </button>
+            <>
+              {!quickRegisterAgreementAccepted && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRiskConfirmed(false);
+                    setShowRiskConfirm(true);
+                  }}
+                  disabled={loading}
+                >
+                  阅读风险协议
+                </button>
+              )}
+              <button
+                type="button"
+                className="primary"
+                onClick={handleAutoRegister}
+                disabled={loading || !quickRegisterAgreementAccepted}
+              >
+                {loading ? "注册中..." : quickRegisterAgreementAccepted ? "开始自动注册" : "请先同意协议"}
+              </button>
+            </>
           )}
         </div>
       </div>
+
+      {showRiskConfirm && (
+        <div className="risk-confirm-overlay" onClick={() => !loading && setShowRiskConfirm(false)}>
+          <div className="risk-confirm-card" onClick={(e) => e.stopPropagation()}>
+            <h3>自动注册风险提示</h3>
+            <p>
+              自动注册功能涉及批量自动化操作，请在确认合规与可控风险后再使用。
+            </p>
+            <ul>
+              <li>仅限学习与技术研究用途</li>
+              <li>请自行承担账号、数据与环境风险</li>
+              <li>请遵守相关平台协议与法律法规</li>
+            </ul>
+            <label className="risk-confirm-check">
+              <input
+                type="checkbox"
+                checked={riskConfirmed}
+                onChange={(e) => setRiskConfirmed(e.target.checked)}
+                disabled={loading}
+              />
+              <span>我已阅读并同意上述风险条款</span>
+            </label>
+            <div className="risk-confirm-actions">
+              <button type="button" onClick={() => setShowRiskConfirm(false)} disabled={loading}>
+                取消
+              </button>
+              <button
+                type="button"
+                className="primary"
+                onClick={handleConfirmRiskAgreement}
+                disabled={loading || !riskConfirmed}
+              >
+                同意并继续
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

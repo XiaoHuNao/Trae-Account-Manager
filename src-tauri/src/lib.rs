@@ -27,6 +27,7 @@ use proxy::{
 pub struct AppSettings {
     pub quick_register_show_window: bool,
     pub auto_register_threads: i32,
+    pub quick_register_agreement_accepted: bool,
     pub official_site_use_system_browser: bool,
     pub accounts_data_path: String,
 }
@@ -36,6 +37,7 @@ impl Default for AppSettings {
         Self {
             quick_register_show_window: false,
             auto_register_threads: 1,
+            quick_register_agreement_accepted: false,
             official_site_use_system_browser: false,
             accounts_data_path: String::new(),
         }
@@ -419,10 +421,16 @@ async fn quick_register(
     if thread_count < 1 {
         return Err(anyhow!("自动注册账号线程数必须大于 0").into());
     }
-    let use_system_browser = {
+    let (use_system_browser, agreement_accepted) = {
         let settings = state.settings.lock().await;
-        settings.official_site_use_system_browser
+        (
+            settings.official_site_use_system_browser,
+            settings.quick_register_agreement_accepted,
+        )
     };
+    if !agreement_accepted {
+        return Err(anyhow!("自动注册功能默认禁用，请先同意风险协议后再使用").into());
+    }
     let creator_dir = prepare_creator_runtime_dir(&app).map_err(ApiError::from)?;
     let accounts_file = creator_dir.join("accounts.txt");
     let cookies_dir = creator_dir.join("cookies");

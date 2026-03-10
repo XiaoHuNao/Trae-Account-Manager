@@ -36,6 +36,7 @@ function App() {
   const [appSettings, setAppSettings] = useState<AppSettings>({
     quick_register_show_window: false,
     auto_register_threads: 1,
+    quick_register_agreement_accepted: false,
     official_site_use_system_browser: false,
     accounts_data_path: "",
   });
@@ -970,7 +971,9 @@ function App() {
         onAccountAdded={loadAccounts}
         quickRegisterShowWindow={appSettings.quick_register_show_window}
         autoRegisterThreads={appSettings.auto_register_threads}
+        quickRegisterAgreementAccepted={appSettings.quick_register_agreement_accepted}
         officialSiteUseSystemBrowser={appSettings.official_site_use_system_browser}
+        onSettingsChange={setAppSettings}
       />
 
       {/* 详情弹窗 */}

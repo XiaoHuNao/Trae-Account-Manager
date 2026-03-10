@@ -19,6 +19,7 @@ export function Settings({ onToast, settings, onSettingsChange, onRefreshAccount
   const [scanning, setScanning] = useState(false);
   const [quickRegisterShowWindow, setQuickRegisterShowWindow] = useState<boolean>(settings.quick_register_show_window);
   const [autoRegisterThreads, setAutoRegisterThreads] = useState<string>(String(settings.auto_register_threads || 1));
+  const [quickRegisterAgreementAccepted, setQuickRegisterAgreementAccepted] = useState<boolean>(settings.quick_register_agreement_accepted);
   const [officialSiteUseSystemBrowser, setOfficialSiteUseSystemBrowser] = useState<boolean>(settings.official_site_use_system_browser);
   const [accountsDataPath, setAccountsDataPath] = useState<string>(settings.accounts_data_path || "");
   const [currentAccountsDataPath, setCurrentAccountsDataPath] = useState<string>("加载中...");
@@ -71,9 +72,16 @@ export function Settings({ onToast, settings, onSettingsChange, onRefreshAccount
   useEffect(() => {
     setQuickRegisterShowWindow(settings.quick_register_show_window);
     setAutoRegisterThreads(String(settings.auto_register_threads || 1));
+    setQuickRegisterAgreementAccepted(settings.quick_register_agreement_accepted);
     setOfficialSiteUseSystemBrowser(settings.official_site_use_system_browser);
     setAccountsDataPath(settings.accounts_data_path || "");
-  }, [settings.quick_register_show_window, settings.auto_register_threads, settings.official_site_use_system_browser, settings.accounts_data_path]);
+  }, [
+    settings.quick_register_show_window,
+    settings.auto_register_threads,
+    settings.quick_register_agreement_accepted,
+    settings.official_site_use_system_browser,
+    settings.accounts_data_path,
+  ]);
 
   // 复制 Trae IDE 机器码
   const handleCopyTraeMachineId = async () => {
@@ -155,6 +163,7 @@ export function Settings({ onToast, settings, onSettingsChange, onRefreshAccount
       onToast?.("error", err.message || "保存设置失败");
       setQuickRegisterShowWindow(settings.quick_register_show_window);
       setAutoRegisterThreads(String(settings.auto_register_threads || 1));
+      setQuickRegisterAgreementAccepted(settings.quick_register_agreement_accepted);
       setOfficialSiteUseSystemBrowser(settings.official_site_use_system_browser);
       setAccountsDataPath(settings.accounts_data_path || "");
       await loadAccountsDataPath();
@@ -169,6 +178,7 @@ export function Settings({ onToast, settings, onSettingsChange, onRefreshAccount
     await handleSaveRegisterSettings({
       quick_register_show_window: checked,
       auto_register_threads: threads,
+      quick_register_agreement_accepted: quickRegisterAgreementAccepted,
       official_site_use_system_browser: officialSiteUseSystemBrowser,
       accounts_data_path: accountsDataPath.trim(),
     });
@@ -180,6 +190,7 @@ export function Settings({ onToast, settings, onSettingsChange, onRefreshAccount
     await handleSaveRegisterSettings({
       quick_register_show_window: quickRegisterShowWindow,
       auto_register_threads: parsed,
+      quick_register_agreement_accepted: quickRegisterAgreementAccepted,
       official_site_use_system_browser: officialSiteUseSystemBrowser,
       accounts_data_path: accountsDataPath.trim(),
     });
@@ -191,6 +202,7 @@ export function Settings({ onToast, settings, onSettingsChange, onRefreshAccount
     await handleSaveRegisterSettings({
       quick_register_show_window: quickRegisterShowWindow,
       auto_register_threads: threads,
+      quick_register_agreement_accepted: quickRegisterAgreementAccepted,
       official_site_use_system_browser: checked,
       accounts_data_path: accountsDataPath.trim(),
     });
@@ -210,6 +222,7 @@ export function Settings({ onToast, settings, onSettingsChange, onRefreshAccount
     await handleSaveRegisterSettings({
       quick_register_show_window: quickRegisterShowWindow,
       auto_register_threads: threads,
+      quick_register_agreement_accepted: quickRegisterAgreementAccepted,
       official_site_use_system_browser: officialSiteUseSystemBrowser,
       accounts_data_path: normalized,
     }, true);
@@ -220,6 +233,7 @@ export function Settings({ onToast, settings, onSettingsChange, onRefreshAccount
     await handleSaveRegisterSettings({
       quick_register_show_window: quickRegisterShowWindow,
       auto_register_threads: threads,
+      quick_register_agreement_accepted: quickRegisterAgreementAccepted,
       official_site_use_system_browser: officialSiteUseSystemBrowser,
       accounts_data_path: "",
     }, true);

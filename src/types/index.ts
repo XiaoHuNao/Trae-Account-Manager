@@ -35,6 +35,7 @@ export interface Account {
 export interface AppSettings {
   quick_register_show_window: boolean;
   auto_register_threads: number;
+  quick_register_agreement_accepted: boolean;
   official_site_use_system_browser: boolean;
   accounts_data_path: string;
 }
